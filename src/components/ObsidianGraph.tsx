@@ -182,7 +182,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
   const connectedNodeIdsRef = useRef(connectedNodeIds);
   connectedNodeIdsRef.current = connectedNodeIds;
 
-  // Handle Canvas Resize (Retina / DPR Aware)
+  // Handle Canvas Resize (Retina / DPR Aware with ResizeObserver)
   useEffect(() => {
     const el = containerRef.current;
     const canvas = canvasRef.current;
@@ -190,6 +190,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
 
     const resize = () => {
       const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(rect.width * dpr);
       canvas.height = Math.floor(rect.height * dpr);
@@ -199,7 +200,12 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
 
     resize();
     window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
+    const ro = new ResizeObserver(resize);
+    ro.observe(el);
+    return () => {
+      window.removeEventListener('resize', resize);
+      ro.disconnect();
+    };
   }, []);
 
   // Screen to Canvas Coordinates helper (1:1 with CSS logical pixels)
@@ -257,7 +263,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
           const dy = b.y - a.y;
           const distSq = dx * dx + dy * dy + 100;
           const dist = Math.sqrt(distSq);
-          const force = (a.radius * b.radius * 260) / distSq;
+          const force = (a.radius * b.radius * 200) / distSq;
           const fx = (dx / dist) * force;
           const fy = (dy / dist) * force;
 
@@ -266,34 +272,36 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
         }
       }
 
-      // 2. Spring attraction along links (Hooke's Law)
+      // 2. Spring attraction along links (Hooke's Law - equal & opposite forces!)
       for (const link of links) {
         const a = nodeMap.get(link.source);
         const b = nodeMap.get(link.target);
         if (!a || !b) continue;
         const dx = b.x - a.x;
         const dy = b.y - a.y;
-        const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        const dist = Math.hypot(dx, dy) || 1;
         const delta = dist - link.length;
         const springForce = delta * 0.045;
         const fx = (dx / dist) * springForce;
         const fy = (dy / dist) * springForce;
 
+        // Equal and opposite! Node a pulled toward b (+fx), node b pulled toward a (-fx)
         if (a.fx === null) { a.vx += fx; a.vy += fy; }
-        if (b.fx === null) { b.vx += fx; b.vy += fy; }
+        if (b.fx === null) { b.vx -= fx; b.vy -= fy; }
       }
 
       // 3. Center gravity (pull gently toward origin)
       for (const n of nodes) {
-        const distFromCenter = Math.sqrt(n.x * n.x + n.y * n.y) || 1;
-        const centerForce = distFromCenter * 0.0035;
+        const distFromCenter = Math.hypot(n.x, n.y) || 1;
+        const centerForce = distFromCenter * 0.0025;
         if (n.fx === null) {
           n.vx -= (n.x / distFromCenter) * centerForce;
           n.vy -= (n.y / distFromCenter) * centerForce;
         }
       }
 
-      // 4. Update velocity and position with damping + ambient hover micro-drift
+      // 4. Update velocity and position with damping + ambient hover micro-drift + max velocity clamp
+      const MAX_VEL = 12.0;
       for (const n of nodes) {
         if (n.fx !== null && n.fy !== null) {
           n.x = n.fx;
@@ -302,18 +310,38 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
           n.vy = 0;
         } else {
           // Ambient gentle floating motion
-          const driftX = Math.sin(t + n.seed) * 0.18;
-          const driftY = Math.cos(t * 0.8 + n.seed * 1.3) * 0.18;
+          const driftX = Math.sin(t + n.seed) * 0.15;
+          const driftY = Math.cos(t * 0.8 + n.seed * 1.3) * 0.15;
 
-          n.vx = (n.vx + driftX) * 0.88;
-          n.vy = (n.vy + driftY) * 0.88;
-          n.x += n.vx;
-          n.y += n.vy;
+          n.vx = (n.vx + driftX) * 0.82;
+          n.vy = (n.vy + driftY) * 0.82;
+
+          // Clamp velocity to strictly prevent explosive runaway
+          const speed = Math.hypot(n.vx, n.vy);
+          if (speed > MAX_VEL) {
+            n.vx = (n.vx / speed) * MAX_VEL;
+            n.vy = (n.vy / speed) * MAX_VEL;
+          }
+
+          // Protect against NaN or Infinity
+          if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
+            n.x = (Math.random() - 0.5) * 80;
+            n.y = (Math.random() - 0.5) * 80;
+            n.vx = 0;
+            n.vy = 0;
+          } else {
+            n.x += n.vx;
+            n.y += n.vy;
+          }
         }
       }
 
       // 5. Render Canvas with proper Retina scaling
       const rect = container.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) {
+        animFrameRef.current = requestAnimationFrame(tick);
+        return;
+      }
       const dpr = window.devicePixelRatio || 1;
 
       const curPan = panRef.current;
@@ -420,7 +448,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     } else {
       isPanningRef.current = true;
-      panStartRef.current = { x: e.clientX - pan.x, y: e.clientY - pan.y };
+      panStartRef.current = { x: e.clientX - panRef.current.x, y: e.clientY - panRef.current.y };
       (e.target as HTMLElement).setPointerCapture(e.pointerId);
     }
   };
@@ -439,10 +467,12 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
       }
     } else if (isPanningRef.current) {
       dragDistanceRef.current += Math.hypot(e.movementX, e.movementY);
-      setPan({
+      const nextPan = {
         x: e.clientX - panStartRef.current.x,
         y: e.clientY - panStartRef.current.y,
-      });
+      };
+      panRef.current = nextPan;
+      setPan(nextPan);
     } else {
       const hovered = getNodeAt(x, y);
       setHoveredNodeId(hovered ? hovered.id : null);
@@ -498,7 +528,11 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    setZoom(z => Math.max(0.3, Math.min(3.0, Math.round(z * zoomFactor * 100) / 100)));
+    setZoom(z => {
+      const next = Math.max(0.3, Math.min(3.0, Math.round(z * zoomFactor * 100) / 100));
+      zoomRef.current = next;
+      return next;
+    });
   };
 
   const hoveredNode = hoveredNodeId ? nodesRef.current.get(hoveredNodeId) : null;
