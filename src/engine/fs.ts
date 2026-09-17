@@ -14,7 +14,7 @@ export function displayPath(p: string): string {
 export function normalize(cwd: string, p: string): string | null {
   let raw = p.trim();
   if (raw === '' ) raw = '.';
-  if (raw === '~') raw = HOME;
+  if (raw === '~' || raw === '/') raw = HOME;
   else if (raw.startsWith('~/')) raw = HOME + raw.slice(1);
   const base = raw.startsWith('/') ? '' : cwd;
   const parts = (base ? base + '/' + raw : raw).split('/');
@@ -25,6 +25,7 @@ export function normalize(cwd: string, p: string): string | null {
     stack.push(part);
   }
   const abs = '/' + stack.join('/');
+  if (abs === '/') return HOME;
   if (abs !== HOME && !abs.startsWith(HOME + '/')) return null; // outside sandbox
   return abs;
 }

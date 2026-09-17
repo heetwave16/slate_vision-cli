@@ -515,7 +515,7 @@ export default function App() {
     setHighlightedIds(new Set());
     setInput('');
     setLog(createBootLog(seqRef.current));
-    addLog('sys', 'sandbox reset to initial state');
+    addLog('sys', 'sandbox reset to initial state at root directory ~');
   };
 
   const onHint = useCallback((lines: TermLine[]) => {

@@ -450,7 +450,40 @@ const FsCanvas = memo(function FsCanvas({
 
   const zoomIn = useCallback(() => applyZoom(zoom + ZOOM_STEP), [zoom, applyZoom]);
   const zoomOut = useCallback(() => applyZoom(zoom - ZOOM_STEP), [zoom, applyZoom]);
-  const zoomReset = useCallback(() => applyZoom(1), [applyZoom]);
+
+  // ----------- Center on CWD & Root Directory -----------
+
+  const recenterCwd = useCallback(() => {
+    const el = scrollRef.current;
+    const n = layout.pathMap ? layout.pathMap.get(cwdPath) : layout.nodes.find(x => x.path === cwdPath);
+    if (el && n) {
+      el.scrollTo({
+        left: Math.max(0, n.x * zoom - el.clientWidth / 2.5),
+        top: Math.max(0, n.y * zoom - el.clientHeight / 2.8),
+        behavior: 'smooth',
+      });
+    }
+  }, [cwdPath, layout, zoom]);
+
+  const recenterRoot = useCallback(() => {
+    const el = scrollRef.current;
+    const rootNode = layout.pathMap ? layout.pathMap.get(HOME) : layout.nodes.find(x => x.depth === 0);
+    applyZoom(1);
+    if (el) {
+      requestAnimationFrame(() => {
+        const targetY = rootNode ? Math.max(0, rootNode.y - el.clientHeight / 3) : 0;
+        el.scrollTo({
+          left: 0,
+          top: targetY,
+          behavior: 'smooth',
+        });
+      });
+    }
+  }, [layout, applyZoom]);
+
+  const zoomReset = useCallback(() => {
+    recenterRoot();
+  }, [recenterRoot]);
 
   const zoomToFit = useCallback(() => {
     const el = scrollRef.current;
@@ -465,25 +498,11 @@ const FsCanvas = memo(function FsCanvas({
     });
   }, [canvasWidth, canvasHeight, applyZoom]);
 
-  // ----------- Center on CWD -----------
-
-  const recenterCwd = useCallback(() => {
-    const el = scrollRef.current;
-    const n = layout.pathMap ? layout.pathMap.get(cwdPath) : layout.nodes.find(x => x.path === cwdPath);
-    if (el && n) {
-      el.scrollTo({
-        left: Math.max(0, n.x * zoom - el.clientWidth / 2.5),
-        top: Math.max(0, n.y * zoom - el.clientHeight / 2.8),
-        behavior: 'smooth',
-      });
-    }
-  }, [cwdPath, layout, zoom]);
-
   useEffect(() => {
     recenterCwd();
   }, [cwdPath, recenterCwd]);
 
-  // ----------- Mouse-wheel zoom (toward cursor) -----------
+  // ----------- Mouse-wheel: 2-finger pan & pinch/Cmd zoom -----------
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -491,10 +510,23 @@ const FsCanvas = memo(function FsCanvas({
 
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
-      // Zoom in or out toward the cursor position
-      const factor = e.deltaY < 0 ? 1.09 : 0.91;
-      applyZoom(zoom * factor, e.clientX, e.clientY);
+
+      // If holding Ctrl or Cmd, or pinch-to-zoom on Mac trackpad (which fires wheel with e.ctrlKey = true):
+      if (e.ctrlKey || e.metaKey) {
+        const delta = -e.deltaY;
+        const zoomDelta = Math.sign(delta) * Math.min(Math.abs(delta) * 0.005, 0.12);
+        applyZoom(zoom * (1 + zoomDelta), e.clientX, e.clientY);
+      } else {
+        // Natural 2-finger trackpad scroll or mouse scroll = PAN the tree canvas
+        if (e.shiftKey && !e.deltaX) {
+          el.scrollLeft += e.deltaY;
+        } else {
+          el.scrollLeft += e.deltaX;
+          el.scrollTop += e.deltaY;
+        }
+      }
     };
+
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
   }, [zoom, applyZoom]);
@@ -551,9 +583,9 @@ const FsCanvas = memo(function FsCanvas({
       if ((e.metaKey || e.ctrlKey) && (e.key === '=' || e.key === '+')) { e.preventDefault(); zoomIn(); }
       if ((e.metaKey || e.ctrlKey) && e.key === '-') { e.preventDefault(); zoomOut(); }
       if ((e.metaKey || e.ctrlKey) && e.key === '0') { e.preventDefault(); zoomReset(); }
-      // F = fit to screen, Home = center CWD
+      // F = fit to screen, Home = reset to root directory
       if (e.key === 'f' && !e.metaKey && !e.ctrlKey && !e.altKey) { zoomToFit(); }
-      if (e.key === 'Home') { recenterCwd(); }
+      if (e.key === 'Home') { recenterRoot(); }
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (e.code === 'Space') {
@@ -567,26 +599,28 @@ const FsCanvas = memo(function FsCanvas({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [zoomIn, zoomOut, zoomReset, zoomToFit, recenterCwd]);
+  }, [zoomIn, zoomOut, zoomReset, zoomToFit, recenterRoot, recenterCwd]);
 
   // ----------- Minimap -----------
 
   const [minimapView, setMinimapView] = useState({ x: 0, y: 0, w: 100, h: 60 });
 
   useEffect(() => {
+    if (!showMinimap) return;
     const el = scrollRef.current;
-    if (!el || !showMinimap) return;
+    if (!el) return;
+
     const update = () => {
       const totalW = canvasWidth * zoom;
       const totalH = canvasHeight * zoom;
-      if (totalW === 0 || totalH === 0) return;
       setMinimapView({
-        x: (el.scrollLeft / totalW) * MINIMAP_W,
-        y: (el.scrollTop / totalH) * MINIMAP_H,
-        w: (el.clientWidth / totalW) * MINIMAP_W,
-        h: (el.clientHeight / totalH) * MINIMAP_H,
+        x: Math.max(0, (el.scrollLeft / totalW) * MINIMAP_W),
+        y: Math.max(0, (el.scrollTop / totalH) * MINIMAP_H),
+        w: Math.min(MINIMAP_W, (el.clientWidth / totalW) * MINIMAP_W),
+        h: Math.min(MINIMAP_H, (el.clientHeight / totalH) * MINIMAP_H),
       });
     };
+
     update();
     el.addEventListener('scroll', update);
     const ro = new ResizeObserver(update);
@@ -668,7 +702,10 @@ const FsCanvas = memo(function FsCanvas({
               <span key={b.path} className="flex items-center gap-1 shrink-0">
                 {idx > 0 && <span className="text-[var(--text-muted)]">/</span>}
                 <button
-                  onClick={() => onNavigate && onNavigate(b.path)}
+                  onClick={() => {
+                    if (b.path === HOME) recenterRoot();
+                    if (onNavigate) onNavigate(b.path);
+                  }}
                   className={cn(
                     'rounded px-1.5 py-0.5 text-[10.5px] transition-colors',
                     b.isCwd
@@ -741,11 +778,19 @@ const FsCanvas = memo(function FsCanvas({
               {/* Zoom & Navigation buttons */}
               <div className="flex items-center gap-1">
                 <button
+                  onClick={recenterRoot}
+                  className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-1.5 py-0.5 font-mono text-[9.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[var(--border-strong)] flex items-center gap-1"
+                  title="Reset view from root directory ~ (Home)"
+                >
+                  <span className="text-[var(--semantic-info)]">⌂</span>
+                  <span>Root</span>
+                </button>
+                <button
                   onClick={recenterCwd}
                   className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-1.5 py-0.5 font-mono text-[9.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                  title="Center on CWD (Home)"
+                  title="Center on CWD"
                 >
-                  ⌂
+                  CWD
                 </button>
                 <button
                   onClick={zoomToFit}
@@ -767,7 +812,7 @@ const FsCanvas = memo(function FsCanvas({
                 <button
                   onClick={zoomReset}
                   className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] h-5 px-1.5 font-mono text-[9.5px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] min-w-[38px] text-center"
-                  title="Reset to 100% (⌘0)"
+                  title="Reset to 100% from root directory (⌘0)"
                 >
                   {Math.round(zoom * 100)}%
                 </button>

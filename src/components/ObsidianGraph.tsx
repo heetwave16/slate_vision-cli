@@ -524,15 +524,27 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
     }
   };
 
-  // Wheel to Zoom
+  // Wheel: 2-Finger Pan & Pinch/Cmd Zoom
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-    setZoom(z => {
-      const next = Math.max(0.3, Math.min(3.0, Math.round(z * zoomFactor * 100) / 100));
-      zoomRef.current = next;
-      return next;
-    });
+    if (e.ctrlKey || e.metaKey) {
+      // Pinch to zoom or Cmd/Ctrl+wheel
+      const delta = -e.deltaY;
+      const factor = 1 + Math.sign(delta) * Math.min(Math.abs(delta) * 0.005, 0.12);
+      setZoom(z => {
+        const next = Math.max(0.3, Math.min(3.0, Math.round(z * factor * 100) / 100));
+        zoomRef.current = next;
+        return next;
+      });
+    } else {
+      // Natural 2-finger scroll on trackpad = PAN the graph
+      const nextPan = {
+        x: panRef.current.x - e.deltaX,
+        y: panRef.current.y - e.deltaY,
+      };
+      panRef.current = nextPan;
+      setPan(nextPan);
+    }
   };
 
   const hoveredNode = hoveredNodeId ? nodesRef.current.get(hoveredNodeId) : null;

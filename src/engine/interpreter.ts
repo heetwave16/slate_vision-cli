@@ -180,6 +180,8 @@ export function initialEnv(): EnvState {
 
   const fs = dir('~', [
     file('.bashrc', 'export PS1="\\u@\\h \\w $ "\nalias ll="ls -la"\nalias la="ls -a"'),
+    file('README.md', README),
+    file('package.json', PACKAGE_JSON),
     dir('project', [
       dir('src', [file('index.js', INDEX_JS), file('utils.js', UTILS_JS)]),
       dir('public', []),
@@ -190,7 +192,7 @@ export function initialEnv(): EnvState {
 
   return {
     fs,
-    cwd: HOME + '/project',
+    cwd: HOME,
     git: { init: false, root: '', branch: 'main', staged: [], dirty: [], commits: [] },
     packages: [],
     seq,
@@ -1858,11 +1860,12 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
         clear = true;
         if (cmd === 'reset') {
           const fresh = initialEnv();
-          env.fs = fresh.fs; env.cwd = fresh.cwd; env.git = fresh.git;
+          env.fs = fresh.fs; env.cwd = HOME; env.git = fresh.git;
           env.packages = []; env.seq = fresh.seq;
           env.promptTheme = 'default';
           env.installedBrew = {};
-          x.log('sys', 'sandbox reset — virtual fs remounted at ~');
+          x.log('sys', 'sandbox reset — virtual fs remounted at root directory ~');
+          x.show('✔ Sandbox reset to initial state at root directory ~', 'success');
         } else x.log('sys', 'screen cleared');
       } else if (cmd === 'demo') {
         x.events.push({ kind: 'script', delay: 0 });
