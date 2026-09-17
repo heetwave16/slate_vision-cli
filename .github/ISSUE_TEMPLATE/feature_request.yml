@@ -1,0 +1,30 @@
+name: Feature Request
+description: Suggest an idea or new terminal feature
+title: "[FEATURE]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for suggesting a feature!
+  - type: input
+    id: feature-title
+    attributes:
+      label: Feature Name
+      description: E.g., Add 'sed' command or add export to PNG for Obsidian graph
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Motivation
+      description: Is your feature request related to a problem? Please describe.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the solution or user experience you would like to see.
+    validations:
+      required: true
