@@ -16,7 +16,7 @@ export interface BrewFormula {
 /* ------------------------------------------------------------------ */
 
 function renderCowsay(text: string): string {
-  const msg = text || 'Moo! Shellscope virtual terminal is alive!';
+  const msg = text || 'Moo! Slate virtual terminal is alive!';
   const borderLine = '-'.repeat(msg.length + 2);
   return [
     `  ${borderLine}`,
@@ -122,14 +122,14 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
       const theme = env.promptTheme ?? 'default';
 
       const specs: [string, string, string?][] = [
-        ['OS', 'Shellscope Linux 6.1.0-viz x86_64', 'fg'],
+        ['OS', 'Slate Linux 6.1.0-viz x86_64', 'fg'],
         ['Host', 'In-Memory Persistent Virtual Machine', 'dim'],
         ['Kernel', '6.1.0-viz-release', 'fg'],
         ['Uptime', '4 hours, 18 mins', 'dim'],
         ['Packages', `${brewCount} (brew), ${npmCount} (npm)`, 'ok'],
         ['Shell', 'zsh 5.9 (virtual sandbox)', 'info'],
         ['Theme', theme, 'amber'],
-        ['Terminal', 'xterm-shellscope-v2', 'fg'],
+        ['Terminal', 'xterm-slate-v2', 'fg'],
         ['CPU', 'Virtual WebAssembly Core (4) @ 3.40GHz', 'dim'],
         ['Memory', '186MiB / 2048MiB', 'info'],
       ];
@@ -416,7 +416,7 @@ export function handleBrewCommand(
       });
       lines.push({
         segs: [
-          { t: `Available formulas in Shellscope Core: `, c: 'dim' },
+          { t: `Available formulas in Slate Core: `, c: 'dim' },
           { t: Object.keys(FORMULA_REGISTRY).join(', '), c: 'info' },
         ],
       });
@@ -448,7 +448,7 @@ export function handleBrewCommand(
     // Create simulated binary in ~/.brew/bin
     const binRes = resolvePath(env, '/home/user/.brew/bin');
     if (binRes && binRes.node.children) {
-      binRes.node.children.push(makeFile(env, target, `#!/usr/bin/env sh\n# Shellscope Virtual Binary: ${target} v${formula.version}\n`));
+      binRes.node.children.push(makeFile(env, target, `#!/usr/bin/env sh\n# Slate Virtual Binary: ${target} v${formula.version}\n`));
     }
 
     // Emit installation stage animation (reuses the npm package-resolver visualizer,
@@ -568,7 +568,7 @@ export function handleBrewCommand(
   }
 
   // Fallback help
-  lines.push({ segs: [{ t: 'Homebrew 4.2.0 (Shellscope Virtual Core)', c: 'amber', b: true }] });
+  lines.push({ segs: [{ t: 'Homebrew 4.2.0 (Slate Virtual Core)', c: 'amber', b: true }] });
   lines.push({ segs: [{ t: 'Usage: brew <command> [options]', c: 'dim' }] });
   lines.push({ segs: [{ t: '  brew install <formula>   Install a formula (e.g. cowsay, neofetch, jq, figlet, bat, ripgrep)', c: 'fg' }] });
   lines.push({ segs: [{ t: '  brew list                List installed formulas', c: 'fg' }] });

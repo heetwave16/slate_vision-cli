@@ -20,7 +20,7 @@ export default class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error('Shellscope Uncaught Error:', error, errorInfo);
+    console.error('Slate Uncaught Error:', error, errorInfo);
   }
 
   handleReset = () => {

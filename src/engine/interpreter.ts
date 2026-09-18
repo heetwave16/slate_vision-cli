@@ -1,5 +1,5 @@
 /* ================================================================== */
-/*  Shellscope interpreter                                            */
+/*  Slate interpreter                                                 */
 /*  line → tokens → intent → draft state mutation → visual events     */
 /* ================================================================== */
 
@@ -146,7 +146,7 @@ const PACKAGE_JSON = `{
 
 const README = `# Sandbox Project
 
-A tiny demo project living inside the Shellscope sandbox.
+A tiny demo project living inside the Slate sandbox.
 
 ## Tasks
 - TODO: wire up the visualization bus
@@ -462,7 +462,7 @@ const HANDLERS: Record<string, Handler> = {
     x.out(`HOME=${HOME}`);
     x.out('USER=dev');
     x.out('SHELL=/bin/zsh');
-    x.out('TERM=xterm-shellscope');
+    x.out('TERM=xterm-slate');
     x.out('SANDBOX=1');
   },
 
@@ -476,7 +476,7 @@ const HANDLERS: Record<string, Handler> = {
     ]);
     x.outSegs([{ t: '    1 ?        00:00:00 ', c: 'dim' }, { t: 'sandbox-init', c: 'fg' }]);
     x.outSegs([{ t: '   42 pts/0    00:00:00 ', c: 'dim' }, { t: 'zsh', c: 'fg' }]);
-    x.outSegs([{ t: '   87 pts/0    00:00:01 ', c: 'dim' }, { t: 'shellscope-viz', c: 'amber' }]);
+    x.outSegs([{ t: '   87 pts/0    00:00:01 ', c: 'dim' }, { t: 'slate-viz', c: 'amber' }]);
     x.show('  (long-running jobs also appear in the process strip →)', 'dim');
   },
 
@@ -1677,8 +1677,8 @@ const HANDLERS: Record<string, Handler> = {
       x.show('  Commands:  storage export | storage import | storage clear', 'dim');
     } else if (sub === 'export' || sub === 'backup') {
       const snapshot = exportStorageSnapshot(x.env);
-      triggerDownload('shellscope-sandbox-backup.json', snapshot);
-      x.show('✔ Exported sandbox snapshot (shellscope-sandbox-backup.json)', 'ok', true);
+      triggerDownload('slate-sandbox-backup.json', snapshot);
+      x.show('✔ Exported sandbox snapshot (slate-sandbox-backup.json)', 'ok', true);
       x.log('sys', 'storage: snapshot exported to file');
     } else if (sub === 'clear' || sub === 'reset') {
       clearPersistentStorage();

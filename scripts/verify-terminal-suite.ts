@@ -33,7 +33,7 @@ function runTest(category: string, name: string, cmd: string, fn: (env: EnvState
   }
 }
 
-console.log('\n🚀 STARTING SHELLSCOPE COMPREHENSIVE TERMINAL VERIFICATION SUITE\n');
+console.log('\n🚀 STARTING SLATE COMPREHENSIVE TERMINAL VERIFICATION SUITE\n');
 
 // 1. Basic Sandbox Commands
 runTest('Basics', 'pwd command', 'pwd', (env) => {
@@ -261,9 +261,9 @@ runTest('Homebrew', 'brew install cowsay and execute cowsay', 'brew install cows
   assert(res1.events.some(e => e.kind === 'stage'), 'brew install should emit bottle pouring stage event');
 
   // Now execute cowsay directly!
-  const res2 = executeCommand('cowsay "Moo from Shellscope"', res1.env);
+  const res2 = executeCommand('cowsay "Moo from Slate"', res1.env);
   assert(res2.lines.some(l => l.segs.some(s => s.t.includes('^__^'))), 'cowsay executable should render ASCII cow');
-  assert(res2.lines.some(l => l.segs.some(s => s.t.includes('Moo from Shellscope'))), 'cowsay should include message');
+  assert(res2.lines.some(l => l.segs.some(s => s.t.includes('Moo from Slate'))), 'cowsay should include message');
 });
 
 runTest('Homebrew', 'brew install neofetch and execute neofetch', 'brew install neofetch -> neofetch', (env) => {

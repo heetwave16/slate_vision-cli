@@ -100,7 +100,7 @@ const TOP = [...new Set([...COMMANDS.map(c => c.name.split(' ')[0]), ...FORMULAS
 
 const SUGGESTIONS = [
   'brew install cowsay',
-  'cowsay "Hello Shellscope!"',
+  'cowsay "Hello Slate!"',
   'neofetch',
   'omz theme agnoster',
   'cat README.md',

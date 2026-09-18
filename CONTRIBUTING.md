@@ -1,6 +1,6 @@
-# Contributing to Slate Vision CLI
+# Contributing to Slate
 
-Thank you for your interest in contributing to **Slate Vision CLI**! Whether you are fixing a bug, adding new terminal builtins, creating new Homebrew formulas, or improving the physics engine, your help is warmly welcomed.
+Thank you for your interest in contributing to **Slate**! Whether you are fixing a bug, adding new terminal builtins, creating new Homebrew formulas, or improving the physics engine, your help is warmly welcomed.
 
 ---
 
@@ -8,8 +8,8 @@ Thank you for your interest in contributing to **Slate Vision CLI**! Whether you
 
 1. **Fork and clone the repository:**
    ```bash
-   git clone https://github.com/<your-username>/slate_vision-cli.git
-   cd slate_vision-cli
+   git clone https://github.com/<your-username>/slate.git
+   cd slate
    ```
 
 2. **Install dependencies:**
@@ -70,7 +70,7 @@ Thank you for your interest in contributing to **Slate Vision CLI**! Whether you
 
 ## 🐛 Reporting Issues
 
-Found a bug or have a suggestion? Open an issue on [GitHub Issues](https://github.com/heetwave16/slate_vision-cli/issues) with:
+Found a bug or have a suggestion? Open an issue on [GitHub Issues](https://github.com/heetwave16/slate/issues) with:
 - A clear, descriptive title.
 - Steps to reproduce the issue.
 - Expected behavior vs. actual behavior.

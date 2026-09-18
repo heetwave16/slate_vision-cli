@@ -29,7 +29,7 @@ function createMotdBlocks(seq: { block: number }): TermBlock[] {
     id: ++seq.block,
     kind: 'motd',
     lines: [
-      { segs: [{ t: 'SHELLSCOPE', c: 'fg', b: true }, { t: ' — precision developer workbench v2.0', c: 'dim' }] },
+      { segs: [{ t: 'SLATE', c: 'fg', b: true }, { t: ' — precision developer workbench v2.0', c: 'dim' }] },
       { segs: [{ t: '─────────────────────────────────────────────────────────────', c: 'dim' }] },
       { segs: [
         { t: 'Kernel: ', c: 'dim' }, { t: '6.1.0-viz', c: 'fg' },
@@ -136,7 +136,7 @@ function SettingsDropdown({
                 <button
                   onClick={() => {
                     const snapshot = exportStorageSnapshot(env);
-                    triggerDownload('shellscope-sandbox-backup.json', snapshot);
+                    triggerDownload('slate-sandbox-backup.json', snapshot);
                   }}
                   className="chip flex-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] py-1 px-1.5 text-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   title="Export full sandbox snapshot JSON"
@@ -561,7 +561,7 @@ export default function App() {
               &gt;_
             </span>
             <span className="font-sans font-semibold tracking-tight text-[var(--text-primary)]">
-              Shellscope
+              Slate
             </span>
           </div>
 
