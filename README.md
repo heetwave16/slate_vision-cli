@@ -1,7 +1,7 @@
-# 🔮 Slate
+# 🔮 Slate (`slate_vision-cli`)
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen.svg)](https://heetwave16.github.io/slate/)
+[![Live Demo](https://img.shields.io/badge/Live-Demo-brightgreen.svg)](https://heetwave16.github.io/slate_vision-cli/)
 [![Tests](https://img.shields.io/badge/Tests-39%2F39%20Passed-emerald.svg)](scripts/verify-terminal-suite.ts)
 [![React](https://img.shields.io/badge/React-19-61dafb.svg?logo=react)](https://react.dev/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
@@ -9,7 +9,7 @@
 
 > **An interactive terminal visualization playground featuring real-time POSIX simulation, Obsidian-inspired force-directed physics graph, Homebrew package manager, and dynamic Oh My Zsh prompt themes.**
 
-🌐 **Live Worldwide Demo:** [https://heetwave16.github.io/slate/](https://heetwave16.github.io/slate/)
+🌐 **Live Worldwide Demo:** [https://heetwave16.github.io/slate_vision-cli/](https://heetwave16.github.io/slate_vision-cli/)
 
 ---
 
@@ -74,8 +74,8 @@
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/heetwave16/slate.git
-cd slate
+git clone https://github.com/heetwave16/slate_vision-cli.git
+cd slate_vision-cli
 ```
 
 ### 2. Install Dependencies
@@ -136,7 +136,7 @@ PASS RATE:    100%
 ## 🤝 Contributing
 
 Contributions, issues, and feature requests are welcome!
-Feel free to check out the [Issues](https://github.com/heetwave16/slate/issues) page or read our [Contributing Guide](CONTRIBUTING.md).
+Feel free to check out the [Issues](https://github.com/heetwave16/slate_vision-cli/issues) page or read our [Contributing Guide](CONTRIBUTING.md).
 
 1. Fork the Project
 2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)

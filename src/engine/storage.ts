@@ -2,8 +2,6 @@ import type { EnvState } from './types';
 
 const STORAGE_KEY = 'slate_sandbox_state_v2';
 const STORAGE_META_KEY = 'slate_sandbox_meta_v2';
-const LEGACY_STORAGE_KEY = 'shellscope_sandbox_state_v2';
-const LEGACY_STORAGE_META_KEY = 'shellscope_sandbox_meta_v2';
 
 export interface StorageMetadata {
   lastSaved: number;
@@ -44,7 +42,7 @@ export function savePersistentEnv(env: EnvState): boolean {
 export function loadPersistentEnv(): EnvState | null {
   if (!isStorageAvailable()) return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY) || window.localStorage.getItem(LEGACY_STORAGE_KEY);
+    const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as EnvState;
     if (parsed && parsed.fs && parsed.cwd && parsed.git && Array.isArray(parsed.history)) {
@@ -62,8 +60,6 @@ export function clearPersistentStorage(): boolean {
   try {
     window.localStorage.removeItem(STORAGE_KEY);
     window.localStorage.removeItem(STORAGE_META_KEY);
-    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
-    window.localStorage.removeItem(LEGACY_STORAGE_META_KEY);
     return true;
   } catch {
     return false;
@@ -73,7 +69,7 @@ export function clearPersistentStorage(): boolean {
 export function getStorageMetadata(): StorageMetadata | null {
   if (!isStorageAvailable()) return null;
   try {
-    const raw = window.localStorage.getItem(STORAGE_META_KEY) || window.localStorage.getItem(LEGACY_STORAGE_META_KEY);
+    const raw = window.localStorage.getItem(STORAGE_META_KEY);
     if (!raw) return null;
     return JSON.parse(raw) as StorageMetadata;
   } catch {

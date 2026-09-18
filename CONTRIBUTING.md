@@ -8,8 +8,8 @@ Thank you for your interest in contributing to **Slate**! Whether you are fixing
 
 1. **Fork and clone the repository:**
    ```bash
-   git clone https://github.com/<your-username>/slate.git
-   cd slate
+   git clone https://github.com/<your-username>/slate_vision-cli.git
+   cd slate_vision-cli
    ```
 
 2. **Install dependencies:**
@@ -70,7 +70,7 @@ Thank you for your interest in contributing to **Slate**! Whether you are fixing
 
 ## 🐛 Reporting Issues
 
-Found a bug or have a suggestion? Open an issue on [GitHub Issues](https://github.com/heetwave16/slate/issues) with:
+Found a bug or have a suggestion? Open an issue on [GitHub Issues](https://github.com/heetwave16/slate_vision-cli/issues) with:
 - A clear, descriptive title.
 - Steps to reproduce the issue.
 - Expected behavior vs. actual behavior.

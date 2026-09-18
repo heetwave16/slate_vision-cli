@@ -1,13 +1,13 @@
 {
-  "name": "slate",
+  "name": "slate-vision-cli",
   "version": "1.0.0",
   "description": "Interactive terminal visualization playground featuring real-time POSIX simulation, Obsidian force-directed physics graph, Homebrew package manager, and Oh My Zsh themes.",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/heetwave16/slate.git"
+    "url": "git+https://github.com/heetwave16/slate_vision-cli.git"
   },
-  "homepage": "https://heetwave16.github.io/slate/",
+  "homepage": "https://heetwave16.github.io/slate_vision-cli/",
   "author": "Heet Mehta <heetmehta16@gmail.com>",
   "license": "MIT",
   "scripts": {
