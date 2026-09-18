@@ -97,8 +97,15 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       const existing = nodesRef.current.get(node.id);
 
       const radius = isDir ? Math.max(12, 17 - depth * 2) : 7.5;
-      const initialAngle = seed * 0.45;
-      const initialDist = 45 + depth * 55;
+      const parentNode = parentId ? nodes.get(parentId) : null;
+      const baseAngle = seed * 1.35;
+      const defaultDist = isDir ? 55 : 36;
+      const defaultX = parentNode
+        ? parentNode.x + Math.cos(baseAngle) * defaultDist
+        : (depth === 0 ? 0 : Math.cos(baseAngle) * (45 + depth * 40));
+      const defaultY = parentNode
+        ? parentNode.y + Math.sin(baseAngle) * defaultDist
+        : (depth === 0 ? 0 : Math.sin(baseAngle) * (45 + depth * 40));
 
       const gNode: GraphNode = {
         id: node.id,
@@ -106,10 +113,10 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         path,
         type: cat.type,
         size: (node.content ?? '').length,
-        x: existing ? existing.x : Math.cos(initialAngle) * initialDist + (Math.random() - 0.5) * 20,
-        y: existing ? existing.y : Math.sin(initialAngle) * initialDist + (Math.random() - 0.5) * 20,
-        vx: existing ? existing.vx * 0.5 : 0,
-        vy: existing ? existing.vy * 0.5 : 0,
+        x: existing ? existing.x : defaultX,
+        y: existing ? existing.y : defaultY,
+        vx: existing ? existing.vx * 0.4 : 0,
+        vy: existing ? existing.vy * 0.4 : 0,
         fx: existing ? existing.fx : null,
         fy: existing ? existing.fy : null,
         radius,
@@ -127,7 +134,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         links.push({
           source: parentId,
           target: node.id,
-          length: isDir ? 70 : 48,
+          length: isDir ? 60 : 42,
         });
       }
 
@@ -147,14 +154,15 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         if (!nodes.has('brew-' + pkgName)) {
           const id = 'brew-' + pkgName;
           const existing = nodesRef.current.get(id);
+          const brewAngle = ++seed * 1.25;
           nodes.set(id, {
             id,
             name: pkgName,
             path: pkg.bin,
             type: 'brew',
             size: 4096,
-            x: existing ? existing.x : (Math.random() - 0.5) * 200,
-            y: existing ? existing.y : (Math.random() - 0.5) * 200,
+            x: existing ? existing.x : Math.cos(brewAngle) * 75,
+            y: existing ? existing.y : Math.sin(brewAngle) * 75,
             vx: 0,
             vy: 0,
             fx: null,
@@ -162,10 +170,10 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
             radius: 10,
             color: '#a991f7',
             glowColor: 'rgba(169,145,247,0.5)',
-            seed: ++seed,
+            seed,
             depth: 2,
           });
-          links.push({ source: env.fs.id, target: id, length: 90 });
+          links.push({ source: env.fs.id, target: id, length: 75 });
         }
       });
     }
@@ -260,7 +268,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       const links = linksRef.current;
       const nodeMap = nodesRef.current;
 
-      if (isDraggingRef.current || isPanningRef.current) {
+      if (isDraggingRef.current) {
         activityRef.current = 180;
       }
 
@@ -268,26 +276,32 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       if (activityRef.current > 0) {
         activityRef.current--;
 
-        // 1. Repulsion between nodes (Coulomb force with collision clamping)
+        // 1. Repulsion between nodes (Coulomb force with distance cutoff)
+        const MAX_REPULSION_DIST = 180;
+        const MAX_REP_DIST_SQ = MAX_REPULSION_DIST * MAX_REPULSION_DIST;
+
         for (let i = 0; i < nodes.length; i++) {
           const a = nodes[i];
           for (let j = i + 1; j < nodes.length; j++) {
             const b = nodes[j];
             const dx = b.x - a.x;
             const dy = b.y - a.y;
-            const minSafeDist = a.radius + b.radius + 6;
-            const distSq = Math.max(dx * dx + dy * dy, minSafeDist * minSafeDist);
-            const dist = Math.sqrt(distSq);
-            const force = (a.radius * b.radius * 160) / distSq;
-            const fx = (dx / dist) * force;
-            const fy = (dy / dist) * force;
+            const distSq = dx * dx + dy * dy;
+            if (distSq > MAX_REP_DIST_SQ) continue;
+
+            const minSafeDist = a.radius + b.radius + 8;
+            const effDistSq = Math.max(distSq, minSafeDist * minSafeDist);
+            const dist = Math.sqrt(effDistSq);
+            const repForce = ((a.radius + b.radius) * 16) / effDistSq;
+            const fx = (dx / dist) * repForce;
+            const fy = (dy / dist) * repForce;
 
             if (a.fx === null) { a.vx -= fx; a.vy -= fy; }
             if (b.fx === null) { b.vx += fx; b.vy += fy; }
           }
         }
 
-        // 2. Spring attraction along links (Hooke's Law)
+        // 2. Spring attraction along links (Hooke's Law - equal and opposite reaction)
         for (const link of links) {
           const a = nodeMap.get(link.source);
           const b = nodeMap.get(link.target);
@@ -296,26 +310,30 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
           const dy = b.y - a.y;
           const dist = Math.hypot(dx, dy) || 1;
           const delta = dist - link.length;
-          const springForce = delta * 0.045;
+          const springForce = delta * 0.055;
           const fx = (dx / dist) * springForce;
           const fy = (dy / dist) * springForce;
 
           if (a.fx === null) { a.vx += fx; a.vy += fy; }
-          if (b.fx === null) { b.vx += fx; b.vy += fy; }
+          if (b.fx === null) { b.vx -= fx; b.vy -= fy; }
         }
 
-        // 3. Center gravity
+        // 3. Center gravity & root anchoring
         for (const n of nodes) {
-          const distFromCenter = Math.hypot(n.x, n.y) || 1;
-          const centerForce = distFromCenter * 0.0025;
-          if (n.fx === null) {
-            n.vx -= (n.x / distFromCenter) * centerForce;
-            n.vy -= (n.y / distFromCenter) * centerForce;
+          if (n.fx !== null) continue;
+          if (n.depth === 0) {
+            // Root node gently stabilizes towards the origin (0, 0)
+            n.vx += (0 - n.x) * 0.08;
+            n.vy += (0 - n.y) * 0.08;
+          } else {
+            // Radial gravity towards center prevents drifting
+            n.vx -= n.x * 0.006;
+            n.vy -= n.y * 0.006;
           }
         }
 
-        // 4. Update velocity and position with damping + max velocity clamp
-        const MAX_VEL = 12.0;
+        // 4. Update velocity and position with damping + boundary safeguards
+        const MAX_VEL = 8.0;
         for (const n of nodes) {
           if (n.fx !== null && n.fy !== null) {
             n.x = n.fx;
@@ -323,11 +341,8 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
             n.vx = 0;
             n.vy = 0;
           } else {
-            const driftX = Math.sin(t + n.seed) * 0.15;
-            const driftY = Math.cos(t * 0.8 + n.seed * 1.3) * 0.15;
-
-            n.vx = (n.vx + driftX) * 0.82;
-            n.vy = (n.vy + driftY) * 0.82;
+            n.vx *= 0.76;
+            n.vy *= 0.76;
 
             const speed = Math.hypot(n.vx, n.vy);
             if (speed > MAX_VEL) {
@@ -336,13 +351,23 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
             }
 
             if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
-              n.x = (Math.random() - 0.5) * 80;
-              n.y = (Math.random() - 0.5) * 80;
+              n.x = (Math.random() - 0.5) * 40;
+              n.y = (Math.random() - 0.5) * 40;
               n.vx = 0;
               n.vy = 0;
             } else {
               n.x += n.vx;
               n.y += n.vy;
+            }
+
+            // Boundary safeguard: keeps graph bounded within 320px
+            const r = Math.hypot(n.x, n.y);
+            if (r > 320) {
+              const excess = r - 320;
+              n.x -= (n.x / r) * (excess * 0.3);
+              n.y -= (n.y / r) * (excess * 0.3);
+              n.vx *= 0.5;
+              n.vy *= 0.5;
             }
           }
         }
@@ -451,13 +476,13 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
 
   // Pointer Handlers: Hold & Drag Physics with Single vs Double Click
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    activityRef.current = 180;
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
     const targetNode = getNodeAt(x, y);
 
     dragDistanceRef.current = 0;
 
     if (targetNode) {
+      activityRef.current = 180;
       isDraggingRef.current = targetNode.id;
       setIsDraggingNode(true);
       targetNode.fx = x;
@@ -484,7 +509,6 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         node.y = y;
       }
     } else if (isPanningRef.current) {
-      activityRef.current = 180;
       dragDistanceRef.current += Math.hypot(e.movementX, e.movementY);
       const nextPan = {
         x: e.clientX - panStartRef.current.x,
@@ -504,10 +528,10 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
   };
 
   const onPointerUp = (_e: React.PointerEvent<HTMLCanvasElement>) => {
-    activityRef.current = 180;
     const draggedId = isDraggingRef.current;
 
     if (draggedId) {
+      activityRef.current = 120;
       const node = nodesRef.current.get(draggedId);
       if (node) {
         // Release fixed position so physics takes over
@@ -547,7 +571,6 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
   // Wheel: 2-Finger Pan & Pinch/Cmd Zoom
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
-    activityRef.current = 180;
     if (e.ctrlKey || e.metaKey) {
       // Pinch to zoom or Cmd/Ctrl+wheel
       const delta = -e.deltaY;
@@ -593,7 +616,6 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
             value={filterText}
             onChange={e => {
               setFilterText(e.target.value);
-              activityRef.current = 180;
             }}
             onKeyDown={e => {
               if (e.key === 'Enter') {
@@ -605,11 +627,9 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
                   panRef.current = nextPan;
                   setPan(nextPan);
                   setHoveredNodeId(match.id);
-                  activityRef.current = 180;
                 }
               } else if (e.key === 'Escape') {
                 setFilterText('');
-                activityRef.current = 180;
               }
             }}
             placeholder="Filter nodes… (↵ jump)"
@@ -617,7 +637,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
           />
           {filterText && (
             <button
-              onClick={() => { setFilterText(''); activityRef.current = 180; }}
+              onClick={() => { setFilterText(''); }}
               className="absolute right-2 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
             >
               ✕
@@ -645,8 +665,14 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       {/* Graph View Controls */}
       <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 font-mono text-[10px]">
         <button
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); activityRef.current = 180; }}
-          className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+          onClick={() => {
+            setZoom(1);
+            zoomRef.current = 1;
+            const centerPan = { x: 0, y: 0 };
+            panRef.current = centerPan;
+            setPan(centerPan);
+          }}
+          className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
           title="Recenter and reset zoom"
         >
           Recenter
