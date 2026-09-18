@@ -14,8 +14,6 @@ import type { TermSeg } from '../engine/types';
  *  - Subcommands    → 'violet'
  */
 
-const SHELL_OPERATORS = new Set(['|', '>', '>>', ';', '&&', '||', '&']);
-
 // Commands that take subcommands
 const SUB_CMD_PARENTS: Record<string, Set<string>> = {
   git: new Set(['init', 'add', 'commit', 'status', 'log', 'branch', 'diff', 'push', 'pull', 'clone', 'checkout', 'merge', 'rebase', 'stash', 'remote', 'fetch', 'reset', 'tag']),

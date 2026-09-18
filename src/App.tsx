@@ -14,7 +14,7 @@ import {
 } from './engine/types';
 import {
   loadPersistentEnv, savePersistentEnv, clearPersistentStorage,
-  exportStorageSnapshot, triggerDownload, isStorageAvailable,
+  exportStorageSnapshot, triggerDownload,
 } from './engine/storage';
 import { getPromptSegs } from './components/Terminal';
 

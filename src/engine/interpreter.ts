@@ -323,6 +323,11 @@ class Exec {
 
   get stdout(): string { return this.stdoutBuf.join('\n'); }
 
+  /** Absorb output produced out-of-band (e.g. by a brew formula) into the capturable stdout buffer. */
+  absorbStdout(text: string) {
+    if (text) this.stdoutBuf.push(text);
+  }
+
   out(text: string, c?: TermColor, b?: boolean) {
     this.lines.push({ segs: [{ t: text, c, b }] });
     this.stdoutBuf.push(text);
@@ -1865,7 +1870,7 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
           env.promptTheme = 'default';
           env.installedBrew = {};
           x.log('sys', 'sandbox reset — virtual fs remounted at root directory ~');
-          x.show('✔ Sandbox reset to initial state at root directory ~', 'success');
+          x.show('✔ Sandbox reset to initial state at root directory ~', 'ok');
         } else x.log('sys', 'screen cleared');
       } else if (cmd === 'demo') {
         x.events.push({ kind: 'script', delay: 0 });
@@ -1890,7 +1895,7 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
           try {
             const res = formula.execute(rawArgs, flags, stdin, env);
             x.lines.push(...res.lines);
-            x.stdout = res.stdout;
+            x.absorbStdout(res.stdout);
             x.proc(cmd, 1200);
             x.log('proc', `${cmd} executed`);
           } catch (e) {

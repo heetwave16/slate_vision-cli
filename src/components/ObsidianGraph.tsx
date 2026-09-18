@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import type { ActivePreview, EnvState, FsNode, LaidNode } from '../engine/types';
-import { displayPath, humanSize, HOME } from '../engine/fs';
+import { humanSize, HOME } from '../engine/fs';
 import { cn } from '../utils/cn';
 
 interface GraphNode {
@@ -51,7 +51,7 @@ function getNodeCategory(name: string, isDir: boolean, path: string): { type: Gr
   return { type: 'file', color: '#7c889c', glowColor: 'rgba(124,136,156,0.35)' };
 }
 
-export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, preview }: Props) {
+export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -484,7 +484,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick, pre
     }
   };
 
-  const onPointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const onPointerUp = (_e: React.PointerEvent<HTMLCanvasElement>) => {
     const draggedId = isDraggingRef.current;
 
     if (draggedId) {

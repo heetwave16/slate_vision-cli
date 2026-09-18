@@ -1,5 +1,5 @@
-import type { EnvState, TermLine, TermSeg, VizEvent } from './types';
-import { makeDir, makeFile, ensureDir, resolvePath } from './fs';
+import type { EnvState, TermLine, VizEvent } from './types';
+import { makeFile, ensureDir, resolvePath } from './fs';
 
 export const OMZ_THEMES = ['robbyrussell', 'agnoster', 'powerlevel10k', 'minimal', 'default'];
 
@@ -92,6 +92,7 @@ export function handleOmzCommand(
       tag: 'sys',
       text: 'oh-my-zsh installed — theme robbyrussell activated',
       color: '#c4a46b',
+      delay: 0,
     });
 
     return { lines, events, ok: true };
@@ -129,6 +130,7 @@ export function handleOmzCommand(
       tag: 'sys',
       text: `omz: prompt theme set to ${target}`,
       color: '#c4a46b',
+      delay: 0,
     });
 
     return { lines, events, ok: true };

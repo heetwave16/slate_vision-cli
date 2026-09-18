@@ -1,5 +1,5 @@
-import type { EnvState, ExecResult, TermLine, TermSeg, VizEvent } from './types';
-import { makeDir, makeFile, resolvePath, parentDir, ensureDir } from './fs';
+import type { EnvState, TermLine, VizEvent } from './types';
+import { makeFile, resolvePath, ensureDir } from './fs';
 
 export interface BrewFormula {
   name: string;
@@ -393,7 +393,6 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
 export function handleBrewCommand(
   args: string[],
   env: EnvState,
-  onStageEvent?: (kind: any, payload: any, dur: number) => void
 ): { lines: TermLine[]; events: VizEvent[]; ok: boolean } {
   const sub = args[0] ?? 'help';
   const target = args[1]?.toLowerCase();
@@ -452,17 +451,19 @@ export function handleBrewCommand(
       binRes.node.children.push(makeFile(env, target, `#!/usr/bin/env sh\n# Shellscope Virtual Binary: ${target} v${formula.version}\n`));
     }
 
-    // Emit installation stage animation
+    // Emit installation stage animation (reuses the npm package-resolver visualizer,
+    // so the payload must match NpmPayload's shape: { pkgs, added, total, secs }).
     events.push({
       kind: 'stage',
-      stage: 'npm', // Reuse rich package resolver visualizer
+      stage: 'npm',
       payload: {
-        cmd: `brew install ${target}`,
-        packages: [
-          { name: target, version: formula.version, size: formula.size },
-        ],
+        pkgs: [{ name: target, version: formula.version, size: formula.size }],
+        added: 1,
+        total: formula.size,
+        secs: '1.2',
       },
       duration: 3200,
+      delay: 0,
     });
 
     events.push({
@@ -470,6 +471,7 @@ export function handleBrewCommand(
       tag: 'sys',
       text: `brew: installed ${target} ${formula.version} (${formula.size})`,
       color: '#83b394',
+      delay: 0,
     });
 
     lines.push({ segs: [{ t: `==> Downloading https://ghcr.io/v2/homebrew/core/${target}/manifests/${formula.version}`, c: 'info', b: true }] });
@@ -554,6 +556,7 @@ export function handleBrewCommand(
       tag: 'sys',
       text: `brew: uninstalled ${target}`,
       color: '#cf8790',
+      delay: 0,
     });
     return { lines, events, ok: true };
   }
