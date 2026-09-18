@@ -27,6 +27,7 @@ export interface GitState {
   init: boolean;
   root: string;      // repo root path
   branch: string;
+  branches?: string[]; // all tracked branches
   staged: string[];  // absolute paths
   dirty: string[];   // absolute paths (modified / untracked)
   commits: GitCommit[];
@@ -205,4 +206,6 @@ export interface LayoutResult {
   nodeMap: Map<string, LaidNode>;
   pathMap: Map<string, LaidNode>;
 }
+
+export type AppTheme = 'slate' | 'dracula' | 'nord' | 'tokyonight' | 'monokai' | 'cyberpunk';
 

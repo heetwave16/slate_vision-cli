@@ -3,18 +3,19 @@ import { AnimatePresence, motion } from 'framer-motion';
 import Terminal from './components/Terminal';
 import FsCanvas from './components/FsCanvas';
 import StageOverlay from './components/StagePanels';
+import { CommandPalette } from './components/CommandPalette';
 import { EventLog, ProcessStrip } from './components/SidePanels';
-import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H } from './engine/fs';
+import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H, resolvePath } from './engine/fs';
 import { DEMO_SCRIPT, executeCommand, initialEnv } from './engine/interpreter';
 import { AnimationBus, AbortError } from './engine/animationBus';
 import { cn } from './utils/cn';
 import {
-  ActivePreview, EnvState, FlashFx, LaidNode, LayoutResult, LogEntry, LogTag, PacketFx,
+  ActivePreview, AppTheme, EnvState, FlashFx, LaidNode, LayoutResult, LogEntry, LogTag, PacketFx,
   ProcFx, StageFx, TermBlock, TermLine, TermSeg, VizEvent,
 } from './engine/types';
 import {
   loadPersistentEnv, savePersistentEnv, clearPersistentStorage,
-  exportStorageSnapshot, triggerDownload,
+  exportStorageSnapshot, triggerDownload, downloadVfsZip,
 } from './engine/storage';
 import { getPromptSegs } from './components/Terminal';
 
@@ -65,6 +66,7 @@ const MAX_LINES_PER_BLOCK = 80;
 
 function SettingsDropdown({
   speed, setSpeed, paused, togglePause, demoRunning, startDemo, env,
+  currentTheme, onSelectTheme, onExportZip,
 }: {
   speed: number;
   setSpeed: (s: number) => void;
@@ -73,6 +75,9 @@ function SettingsDropdown({
   demoRunning: boolean;
   startDemo: () => void;
   env: EnvState;
+  currentTheme: AppTheme;
+  onSelectTheme: (t: AppTheme) => void;
+  onExportZip: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -135,13 +140,23 @@ function SettingsDropdown({
               <div className="flex gap-1.5 font-mono text-[10px]">
                 <button
                   onClick={() => {
+                    onExportZip();
+                    setOpen(false);
+                  }}
+                  className="chip flex-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] py-1 px-1.5 text-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                  title="Download complete virtual filesystem as ZIP"
+                >
+                  Export ZIP
+                </button>
+                <button
+                  onClick={() => {
                     const snapshot = exportStorageSnapshot(env);
                     triggerDownload('slate-sandbox-backup.json', snapshot);
                   }}
                   className="chip flex-1 rounded border border-[var(--border-default)] bg-[var(--surface-card)] py-1 px-1.5 text-center text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                   title="Export full sandbox snapshot JSON"
                 >
-                  Export JSON
+                  JSON
                 </button>
                 <button
                   onClick={() => {
@@ -153,6 +168,27 @@ function SettingsDropdown({
                 >
                   Clear
                 </button>
+              </div>
+            </div>
+
+            {/* Theme Selector */}
+            <div className="border-b border-[var(--border-subtle)] px-3 py-2">
+              <div className="font-sans text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Theme</div>
+              <div className="grid grid-cols-3 gap-1 font-mono text-[9px]">
+                {(['slate', 'dracula', 'nord', 'tokyo-night', 'monokai-pro', 'cyberpunk'] as AppTheme[]).map(t => (
+                  <button
+                    key={t}
+                    onClick={() => onSelectTheme(t)}
+                    className={cn(
+                      'rounded border px-1 py-0.5 text-center transition-colors truncate',
+                      currentTheme === t
+                        ? 'border-[var(--border-strong)] bg-[var(--surface-hover)] font-medium text-[var(--text-primary)]'
+                        : 'border-[var(--border-subtle)] bg-[var(--surface-card)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]'
+                    )}
+                  >
+                    {t === 'tokyo-night' ? 'Tokyo' : t === 'monokai-pro' ? 'Monokai' : t.charAt(0).toUpperCase() + t.slice(1)}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -205,12 +241,12 @@ function SettingsDropdown({
             <div className="px-3 py-2">
               <div className="font-sans text-[9px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">Shortcuts</div>
               <div className="grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px]">
+                <span className="text-[var(--text-muted)]"><span className="kbd">⌘K</span> palette</span>
                 <span className="text-[var(--text-muted)]"><span className="kbd">Tab</span> complete</span>
                 <span className="text-[var(--text-muted)]"><span className="kbd">↑↓</span> history</span>
                 <span className="text-[var(--text-muted)]"><span className="kbd">Ctrl+L</span> clear</span>
                 <span className="text-[var(--text-muted)]"><span className="kbd">Ctrl+C</span> cancel</span>
                 <span className="text-[var(--text-muted)]"><span className="kbd">Esc</span> stop tour</span>
-                <span className="text-[var(--text-muted)]"><span className="kbd">F</span> fit canvas</span>
               </div>
             </div>
           </motion.div>
@@ -224,6 +260,35 @@ function SettingsDropdown({
 
 export default function App() {
   const seqRef = useRef({ block: 0, fx: 0, log: 0 });
+
+  const [theme, setTheme] = useState<AppTheme>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('slate_theme') as AppTheme;
+      if (saved && ['slate', 'dracula', 'nord', 'tokyo-night', 'monokai-pro', 'cyberpunk'].includes(saved)) {
+        return saved;
+      }
+    }
+    return 'slate';
+  });
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('slate_theme', theme);
+    }
+  }, [theme]);
+
+  // Global ⌘K / Ctrl+K listener
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setIsPaletteOpen(o => !o);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const [env, setEnv] = useState<EnvState>(() => loadPersistentEnv() ?? initialEnv());
   const [blocks, setBlocks] = useState<TermBlock[]>(() => createMotdBlocks(seqRef.current));
@@ -546,12 +611,75 @@ export default function App() {
     };
   }, []);
 
+  const handleExportZip = useCallback(() => {
+    downloadVfsZip(env, 'slate-sandbox.zip');
+    onHint([{ segs: [{ t: '✓ Exported virtual filesystem as slate-sandbox.zip', c: 'ok' }] }]);
+  }, [env, onHint]);
+
+  const handleSelectFile = useCallback((filePath: string) => {
+    const res = resolvePath(env, filePath);
+    if (res && res.node.type === 'file') {
+      setPreview({
+        nodeId: res.node.id,
+        path: filePath,
+        name: res.node.name,
+        content: res.node.content ?? '',
+      });
+      runLineRef.current('cat ' + filePath);
+    } else {
+      runLineRef.current('cat ' + filePath);
+    }
+  }, [env]);
+
+  const handleDropFiles = useCallback((files: { name: string; content: string }[]) => {
+    setEnv(prev => {
+      const nextFs = structuredClone(prev.fs);
+      const target = resolvePath({ ...prev, fs: nextFs }, prev.cwd);
+      if (target && target.node.type === 'dir') {
+        target.node.children = target.node.children ?? [];
+        for (const file of files) {
+          const existingIdx = target.node.children.findIndex(c => c.name === file.name);
+          const newNode = {
+            id: 'file-' + Math.random().toString(36).slice(2, 9),
+            name: file.name,
+            type: 'file' as const,
+            content: file.content,
+            mtime: Date.now(),
+          };
+          if (existingIdx >= 0) {
+            target.node.children[existingIdx] = newNode;
+          } else {
+            target.node.children.push(newNode);
+          }
+        }
+      }
+      return {
+        ...prev,
+        fs: nextFs,
+        git: {
+          ...prev.git,
+          dirty: prev.git.init
+            ? [...new Set([...prev.git.dirty, ...files.map(f => `${prev.cwd}/${f.name}`.replace(/\/+/g, '/'))])]
+            : prev.git.dirty,
+        },
+      };
+    });
+    onHint([{
+      segs: [{
+        t: `✓ Mounted ${files.length} file(s) into ${displayPath(env.cwd)}: ${files.map(f => f.name).join(', ')}`,
+        c: 'ok',
+      }],
+    }]);
+  }, [env.cwd, onHint]);
+
   const stagedSet = useMemo(() => new Set(env.git.staged), [env.git.staged]);
   const dirtySet = useMemo(() => new Set(env.git.dirty), [env.git.dirty]);
 
   return (
-    <div className={cn('relative flex h-screen flex-col bg-[var(--surface-base)] text-[var(--text-primary)]', paused && 'viz-paused')}>
-
+    <div
+      data-theme={theme}
+      className={cn('relative flex h-screen flex-col bg-[var(--surface-base)] text-[var(--text-primary)] transition-colors duration-150', paused && 'viz-paused')}
+    >
       {/* ================= 1. COMMAND BAR (40px) ================= */}
       <header className="flex h-10 shrink-0 items-center justify-between border-b border-[var(--border-default)] bg-[var(--surface-panel)] px-3 text-xs">
         {/* Left: Brand & Breadcrumb */}
@@ -580,8 +708,22 @@ export default function App() {
           </div>
         </div>
 
-        {/* Right: Compact Controls */}
+        {/* Right: Controls & Command Palette */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* ⌘K Command Palette Launcher */}
+          <button
+            onClick={() => setIsPaletteOpen(true)}
+            className="chip flex h-7 items-center gap-1.5 rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2.5 font-mono text-[11px] text-[var(--text-muted)] hover:border-[var(--border-strong)] hover:text-[var(--text-primary)] transition-colors"
+            title="Open Command Palette (⌘K / Ctrl+K)"
+          >
+            <svg className="h-3.5 w-3.5 text-[var(--semantic-info)]" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="7" cy="7" r="5" />
+              <line x1="11" y1="11" x2="14.5" y2="14.5" />
+            </svg>
+            <span className="hidden sm:inline">Commands</span>
+            <kbd className="hidden md:inline rounded bg-[var(--surface-panel)] border border-[var(--border-subtle)] px-1 py-0.2 text-[8.5px]">⌘K</kbd>
+          </button>
+
           {/* Mobile Tab Switcher */}
           <div className="flex lg:hidden rounded border border-[var(--border-default)] bg-[var(--surface-card)] p-0.5 font-mono text-[10px]">
             <button
@@ -613,6 +755,9 @@ export default function App() {
             demoRunning={demoRunning}
             startDemo={() => startDemoRef.current()}
             env={env}
+            currentTheme={theme}
+            onSelectTheme={setTheme}
+            onExportZip={handleExportZip}
           />
 
           {/* Reset */}
@@ -674,6 +819,7 @@ export default function App() {
               onNodeClick={onNodeClick}
               onNavigate={(p) => runLineRef.current('cd ' + p)}
               env={env}
+              onDropFiles={handleDropFiles}
             />
 
             {/* Contextual Operation Stage Overlay */}
@@ -733,6 +879,23 @@ export default function App() {
           <span className="hidden sm:inline">in-memory sandbox</span>
         </div>
       </footer>
+
+      {/* Global Command Palette (⌘K) */}
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        env={env}
+        onExecute={l => runLineRef.current(l)}
+        onSelectFile={handleSelectFile}
+        currentTheme={theme}
+        onSelectTheme={setTheme}
+        onExportZip={handleExportZip}
+        onToggleGraph={() => {
+          const canvasBtn = document.querySelector('button[title="Force-directed Obsidian physics graph"]') as HTMLButtonElement | null;
+          if (canvasBtn) canvasBtn.click();
+        }}
+        graphActive={false}
+      />
     </div>
   );
 }

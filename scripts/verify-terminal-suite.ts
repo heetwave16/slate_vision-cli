@@ -1,6 +1,7 @@
 import { initialEnv, executeCommand, COMMANDS } from '../src/engine/interpreter';
 import type { EnvState } from '../src/engine/types';
 import { resolvePath } from '../src/engine/fs';
+import { exportVfsAsZip, calculateCrc32 } from '../src/engine/storage';
 
 interface TestResult {
   category: string;
@@ -335,6 +336,67 @@ runTest('Combinators', 'append redirection >>', 'echo 1 > out.txt && echo 2 >> o
 runTest('Combinators', 'short-circuit on failure with &&', 'fail && should_not_run', (env) => {
   const res = executeCommand('cd /non_existent_folder_123 && touch should_never_exist.txt', env);
   assert(!resolvePath(res.env, 'should_never_exist.txt'), 'second command should not execute on failure');
+});
+
+runTest('Combinators', 'fallback on failure with ||', 'fail || fallback', (env) => {
+  const res = executeCommand('cd /non_existent_folder_123 || touch fallback_created.txt', env);
+  assert(!!resolvePath(res.env, 'fallback_created.txt'), 'second command should execute on first failure');
+});
+
+runTest('Combinators', 'skip alternative on success with ||', 'success || skip', (env) => {
+  const res = executeCommand('pwd || touch should_never_exist_or.txt', env);
+  assert(!resolvePath(res.env, 'should_never_exist_or.txt'), 'second command should be skipped on success');
+});
+
+runTest('Variables', 'variable expansion for $USER, $HOME, and $?', 'echo $USER $HOME $?', (env) => {
+  const res = executeCommand('echo $USER $HOME $?', env);
+  const text = res.lines[0]?.segs[0]?.t;
+  assert(text.includes('dev') && text.includes('/home/user') && text.includes('0'), 'variables should expand properly');
+});
+
+runTest('Filesystem', 'mv overwrite replaces existing destination', 'mv f1 f2 overwrite', (env) => {
+  const res1 = executeCommand('echo "first" > f1.txt && echo "second" > f2.txt', env);
+  const res2 = executeCommand('mv f1.txt f2.txt', res1.env);
+  const dirNode = resolvePath(res2.env, '.')?.node;
+  const matches = (dirNode?.children ?? []).filter(c => c.name === 'f2.txt');
+  assert(matches.length === 1, 'there should be exactly one f2.txt after mv overwrite');
+  assert(matches[0].content?.includes('first'), 'f2.txt should contain content of f1.txt');
+});
+
+runTest('Git', 'git checkout -b and branch switching', 'git checkout -b feature', (env) => {
+  const res1 = executeCommand('git init', env);
+  const res2 = executeCommand('git checkout -b feature-test', res1.env);
+  assert(res2.env.git.branch === 'feature-test', 'checkout -b should switch branch');
+  assert(res2.env.git.branches?.includes('feature-test'), 'branches list should contain new branch');
+  const res3 = executeCommand('git checkout main', res2.env);
+  assert(res3.env.git.branch === 'main', 'checkout should switch back to main');
+});
+
+runTest('Processes', 'kill and pkill process signals', 'kill 1234', (env) => {
+  const res = executeCommand('kill 1234', env);
+  assert(res.lines.some(l => l.segs.some(s => s.t.includes('1234') && s.t.includes('terminated'))), 'kill should output signal message');
+});
+
+runTest('Editor', 'nano command opens file in preview', 'nano test_edit.txt', (env) => {
+  const res = executeCommand('nano test_edit.txt', env);
+  assert(res.events.some(e => e.kind === 'preview'), 'nano should emit preview event');
+  assert(!!resolvePath(res.env, 'test_edit.txt'), 'nano should create file if not exists');
+});
+
+runTest('Storage Engine', 'exportVfsAsZip generates valid PKZIP archive', 'exportVfsAsZip(env)', async (env) => {
+  const testBytes = new TextEncoder().encode('Hello ZIP');
+  const crc = calculateCrc32(testBytes);
+  assert(typeof crc === 'number' && crc > 0, 'CRC32 should be calculated');
+
+  const zipBlob = exportVfsAsZip(env);
+  assert(zipBlob instanceof Blob, 'exportVfsAsZip should return a Blob');
+  assert(zipBlob.type === 'application/zip', 'blob should have application/zip mime type');
+  assert(zipBlob.size > 100, 'zip blob should have content');
+
+  const arrayBuffer = await zipBlob.arrayBuffer();
+  const uint8 = new Uint8Array(arrayBuffer);
+  // Check PKZIP local header magic bytes: 0x50, 0x4b, 0x03, 0x04 ('PK\x03\x04')
+  assert(uint8[0] === 0x50 && uint8[1] === 0x4b && uint8[2] === 0x03 && uint8[3] === 0x04, 'ZIP header magic must match PKZIP 0x04034b50');
 });
 
 // Summary Report

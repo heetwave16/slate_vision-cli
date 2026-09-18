@@ -22,6 +22,7 @@ interface Props {
   onNodeClick: (n: LaidNode) => void;
   onNavigate?: (path: string) => void;
   env?: EnvState;
+  onDropFiles?: (files: { name: string; content: string }[]) => void;
 }
 
 const trunc = (s: string, n = 15) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
@@ -374,14 +375,47 @@ const MINIMAP_H = 100;
 
 const FsCanvas = memo(function FsCanvas({
   layout, cwdPath, staged, dirty, flashes, packets, preview, highlightedIds,
-  onClosePreview, onSaveFile, onNodeClick, onNavigate, env,
+  onClosePreview, onSaveFile, onNodeClick, onNavigate, env, onDropFiles,
 }: Props) {
   const [viewMode, setViewMode] = useState<'tree' | 'graph'>('tree');
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
   const [zoom, setZoom] = useState(1);
   const [docked, setDocked] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    if (!onDropFiles || !e.dataTransfer.files.length) return;
+    const files: { name: string; content: string }[] = [];
+    for (let i = 0; i < e.dataTransfer.files.length; i++) {
+      const file = e.dataTransfer.files[i];
+      try {
+        const text = await file.text();
+        files.push({ name: file.name, content: text });
+      } catch {
+        // ignore unreadable
+      }
+    }
+    if (files.length) {
+      onDropFiles(files);
+    }
+  };
   const [zoomBadge, setZoomBadge] = useState<number | null>(null);
   const [showMinimap, setShowMinimap] = useState(true);
 
@@ -498,9 +532,13 @@ const FsCanvas = memo(function FsCanvas({
     });
   }, [canvasWidth, canvasHeight, applyZoom]);
 
+  const prevCwdRef = useRef<string | null>(null);
   useEffect(() => {
-    recenterCwd();
-  }, [cwdPath, recenterCwd]);
+    if (prevCwdRef.current !== cwdPath) {
+      prevCwdRef.current = cwdPath;
+      recenterCwd();
+    }
+  }, [cwdPath]);
 
   // ----------- Mouse-wheel: 2-finger pan & pinch/Cmd zoom -----------
 
@@ -689,7 +727,33 @@ const FsCanvas = memo(function FsCanvas({
   // ========== RENDER ==========
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[var(--surface-panel)]">
+    <div
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="relative flex h-full min-h-0 flex-col bg-[var(--surface-panel)]"
+    >
+      {/* Drag and drop import overlay */}
+      <AnimatePresence>
+        {isDraggingOver && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.98 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.98 }}
+            transition={{ duration: 0.12 }}
+            className="pointer-events-none absolute inset-0 z-50 flex flex-col items-center justify-center bg-[var(--surface-overlay)]/95 backdrop-blur-sm border-2 border-dashed border-[var(--semantic-info)] m-2 rounded-xl"
+          >
+            <div className="text-3xl mb-2">📥</div>
+            <div className="font-mono text-sm font-bold text-[var(--text-primary)]">
+              Drop files to import into {displayPath(cwdPath)}
+            </div>
+            <div className="font-mono text-xs text-[var(--text-muted)] mt-1">
+              Files will be mounted directly into your virtual environment
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Pane Header with Interactive Breadcrumbs & Canvas Toolbar */}
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-default)] bg-[var(--surface-panel)] px-3 font-mono text-[11px]">
         {/* Interactive Breadcrumbs */}

@@ -215,7 +215,7 @@ function PipelineStage({ p, speed }: { p: PipelinePayload; speed: number }) {
                 </div>
               </motion.div>
               {i < p.stages.length - 1 && (
-                <div className="relative mx-1 h-[2px] min-w-6 flex-1 overflow-visible rounded bg-ink-600">
+                <div className="relative mx-1 h-[2px] min-w-6 flex-1 overflow-visible rounded bg-[var(--border-default)]">
                   <div
                     className="absolute inset-0 rounded transition-opacity duration-300"
                     style={{
@@ -226,7 +226,7 @@ function PipelineStage({ p, speed }: { p: PipelinePayload; speed: number }) {
                   {step >= i + 1 && step < p.stages.length + 2 && (
                     <motion.span
                       key={step + '-' + i}
-                      className="absolute -top-[3px] h-2 w-2 rounded-full bg-cyan"
+                      className="absolute -top-[3px] h-2 w-2 rounded-full bg-[var(--semantic-info)]"
                       style={{ boxShadow: '0 0 8px rgba(83,199,240,0.9)' }}
                       initial={{ left: '0%' }}
                       animate={{ left: '100%' }}
@@ -240,15 +240,15 @@ function PipelineStage({ p, speed }: { p: PipelinePayload; speed: number }) {
         })}
       </div>
 
-      <div className="mt-2 rounded-md border border-ink-600/70 bg-ink-850/80 px-3 py-2">
-        <div className="mb-1 font-mono text-[8.5px] tracking-[0.12em] text-fg-faint">FINAL STDOUT</div>
+      <div className="mt-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2">
+        <div className="mb-1 font-mono text-[8.5px] tracking-[0.12em] text-[var(--text-muted)]">FINAL STDOUT</div>
         {p.output.length ? p.output.map((l, i) => (
           <motion.div key={i} initial={{ opacity: 0, x: -6 }} animate={{ opacity: 1, x: 0 }}
             transition={{ delay: (0.3 + i * 0.14) / speed }}
-            className="truncate font-mono text-[10.5px] text-fg">
+            className="truncate font-mono text-[10.5px] text-[var(--text-primary)]">
             {l}
           </motion.div>
-        )) : <div className="font-mono text-[10px] text-fg-faint">(empty)</div>}
+        )) : <div className="font-mono text-[10px] text-[var(--text-muted)]">(empty)</div>}
       </div>
     </div>
   );
@@ -270,7 +270,7 @@ function GitStage({ p, speed }: { p: GitPayload; speed: number }) {
       initial={{ opacity: 0, x: -18 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: delay / speed, type: 'spring', stiffness: 300, damping: 24 }}
-      className="inline-flex max-w-full items-center gap-1.5 rounded border border-ink-500/60 bg-ink-800 px-2 py-1 font-mono text-[9.5px] text-fg"
+      className="inline-flex max-w-full items-center gap-1.5 rounded border border-[var(--border-strong)] bg-[var(--surface-hover)] px-2 py-1 font-mono text-[9.5px] text-[var(--text-primary)]"
     >
       <i className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: color }} />
       <span className="truncate" style={{ textDecoration: strike ? 'line-through' : undefined, opacity: strike ? 0.55 : 1 }}>{f}</span>
@@ -281,12 +281,12 @@ function GitStage({ p, speed }: { p: GitPayload; speed: number }) {
     <div className="grid h-full grid-cols-[1fr_auto_1fr_auto_1.2fr] items-center gap-2">
       {/* working tree */}
       <div className="min-w-0">
-        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-fg-faint">WORKING TREE</div>
+        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-[var(--text-muted)]">WORKING TREE</div>
         {p.mode === 'init' ? (
           <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }}
-            className="rounded-md border border-rose/50 bg-rose/8 px-3 py-3 text-center">
-            <div className="font-mono text-[11px] font-bold text-rose">.git/ created</div>
-            <div className="mt-0.5 font-mono text-[8.5px] text-fg-dim">repo @ {p.root}</div>
+            className="rounded-md border border-[var(--semantic-error)]/40 bg-[var(--semantic-error)]/10 px-3 py-3 text-center">
+            <div className="font-mono text-[11px] font-bold text-[var(--semantic-error)]">.git/ created</div>
+            <div className="mt-0.5 font-mono text-[8.5px] text-[var(--text-secondary)]">repo @ {p.root}</div>
           </motion.div>
         ) : (
           <div className="flex flex-wrap gap-1.5">
@@ -299,13 +299,13 @@ function GitStage({ p, speed }: { p: GitPayload; speed: number }) {
 
       {/* staging */}
       <div className="min-w-0">
-        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-fg-faint">STAGING AREA</div>
-        <div className="flex min-h-[54px] flex-wrap content-start gap-1.5 rounded-md border border-dashed border-rose/40 bg-rose/5 p-2">
+        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-[var(--text-muted)]">STAGING AREA</div>
+        <div className="flex min-h-[54px] flex-wrap content-start gap-1.5 rounded-md border border-dashed border-[var(--semantic-error)]/30 bg-[var(--semantic-error)]/5 p-2">
           {p.mode === 'init' ? (
-            <span className="font-mono text-[9px] text-fg-faint">empty</span>
+            <span className="font-mono text-[9px] text-[var(--text-muted)]">empty</span>
           ) : p.mode === 'commit' && moved ? (
             <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 / speed }}
-              className="font-mono text-[10px] font-bold text-green">✓ committed — index clean</motion.span>
+              className="font-mono text-[10px] font-bold text-[var(--semantic-success)]">✓ committed — index clean</motion.span>
           ) : (
             p.files.map((f, i) => chip(f, '#f2708a', (p.mode === 'add' ? 300 : 60) + i * 110))
           )}
@@ -316,18 +316,18 @@ function GitStage({ p, speed }: { p: GitPayload; speed: number }) {
 
       {/* repository */}
       <div className="min-w-0">
-        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-fg-faint">
-          REPOSITORY · <span className="text-cyan">{p.branch}</span>
+        <div className="mb-1.5 font-mono text-[8.5px] tracking-[0.14em] text-[var(--text-muted)]">
+          REPOSITORY · <span className="text-[var(--semantic-info)]">{p.branch}</span>
         </div>
         {p.commits.length === 0 ? (
-          <div className="flex items-center gap-2 rounded-md border border-ink-600 bg-ink-850 px-3 py-3">
-            <span className="h-2.5 w-2.5 rounded-full border-2 border-dashed border-fg-faint" />
-            <span className="font-mono text-[9.5px] text-fg-faint">no commits yet</span>
+          <div className="flex items-center gap-2 rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-3">
+            <span className="h-2.5 w-2.5 rounded-full border-2 border-dashed border-[var(--text-muted)]" />
+            <span className="font-mono text-[9.5px] text-[var(--text-muted)]">no commits yet</span>
           </div>
         ) : (
-          <div className="rounded-md border border-ink-600 bg-ink-850 px-3 py-2.5">
+          <div className="rounded-md border border-[var(--border-default)] bg-[var(--surface-card)] px-3 py-2.5">
             <div className="relative flex items-center gap-3 py-1">
-              <div className="absolute left-[5px] right-2 top-1/2 h-[2px] -translate-y-1/2 bg-ink-500" />
+              <div className="absolute left-[5px] right-2 top-1/2 h-[2px] -translate-y-1/2 bg-[var(--border-strong)]" />
               {p.commits.map((c, i) => {
                 const latest = i === p.commits.length - 1;
                 return (
@@ -350,9 +350,9 @@ function GitStage({ p, speed }: { p: GitPayload; speed: number }) {
             {p.commit && (
               <motion.div initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 / speed }}
                 className="mt-1 font-mono text-[9.5px]">
-                <span className="font-bold text-amber">{p.commit.hash}</span>
-                <span className="text-cyan"> (HEAD → {p.branch})</span>
-                <div className="truncate text-fg-dim">"{p.commit.msg}" · {p.commit.files.length} files</div>
+                <span className="font-bold text-[var(--semantic-warning)]">{p.commit.hash}</span>
+                <span className="text-[var(--semantic-info)]"> (HEAD → {p.branch})</span>
+                <div className="truncate text-[var(--text-secondary)]">"{p.commit.msg}" · {p.commit.files.length} files</div>
               </motion.div>
             )}
           </div>
@@ -391,9 +391,9 @@ function NpmStage({ p, speed }: { p: NpmPayload; speed: number }) {
       <div className="flex items-center gap-3">
         {/* package.json */}
         <motion.div initial={{ opacity: 0, x: -12 }} animate={{ opacity: 1, x: 0 }}
-          className="shrink-0 rounded-md border border-violet/50 bg-violet/8 px-3 py-2.5 text-center">
-          <div className="font-mono text-[10.5px] font-bold text-violet">package.json</div>
-          <div className="font-mono text-[8px] text-fg-faint">dependencies</div>
+          className="shrink-0 rounded-md border border-[var(--semantic-info)]/40 bg-[var(--semantic-info)]/10 px-3 py-2.5 text-center">
+          <div className="font-mono text-[10.5px] font-bold text-[var(--semantic-info)]">package.json</div>
+          <div className="font-mono text-[8px] text-[var(--text-muted)]">dependencies</div>
         </motion.div>
 
         {/* resolver */}
@@ -403,7 +403,7 @@ function NpmStage({ p, speed }: { p: NpmPayload; speed: number }) {
               strokeWidth="2.4" strokeDasharray={done ? '0' : '14 10'} strokeLinecap="round" opacity="0.85" />
             {done && <path d="M11 17.5 15 21.5 23.5 12.5" fill="none" stroke="#3fdc9b" strokeWidth="2.6" strokeLinecap="round" />}
           </svg>
-          <span className="mt-0.5 font-mono text-[8px] text-fg-faint">{done ? 'resolved' : 'resolving…'}</span>
+          <span className="mt-0.5 font-mono text-[8px] text-[var(--text-muted)]">{done ? 'resolved' : 'resolving…'}</span>
         </div>
 
         {/* packages */}
@@ -414,10 +414,10 @@ function NpmStage({ p, speed }: { p: NpmPayload; speed: number }) {
               initial={{ opacity: 0, scale: 0.8, y: 8 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               transition={{ delay: (0.5 + i * 0.18) / speed, type: 'spring', stiffness: 300, damping: 22 }}
-              className="rounded border border-violet/40 bg-ink-800 px-2 py-1.5"
+              className="rounded border border-[var(--semantic-info)]/30 bg-[var(--surface-hover)] px-2 py-1.5"
             >
-              <div className="truncate font-mono text-[10px] font-bold text-violet">{pkg.name}</div>
-              <div className="font-mono text-[8px] text-fg-faint">v{pkg.version} · {pkg.size}</div>
+              <div className="truncate font-mono text-[10px] font-bold text-[var(--semantic-info)]">{pkg.name}</div>
+              <div className="font-mono text-[8px] text-[var(--text-muted)]">v{pkg.version} · {pkg.size}</div>
             </motion.div>
           ))}
         </div>
@@ -425,7 +425,7 @@ function NpmStage({ p, speed }: { p: NpmPayload; speed: number }) {
 
       {/* progress */}
       <div className="mt-4">
-        <div className="h-1 overflow-hidden rounded-full bg-ink-600">
+        <div className="h-1 overflow-hidden rounded-full bg-[var(--border-default)]">
           <motion.div
             className="h-full rounded-full"
             style={{ background: done ? '#3fdc9b' : 'linear-gradient(90deg, #a991f7, #53c7f0)' }}

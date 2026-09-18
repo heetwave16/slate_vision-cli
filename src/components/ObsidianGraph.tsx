@@ -60,6 +60,11 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isDraggingNode, setIsDraggingNode] = useState(false);
+  const [filterText, setFilterText] = useState('');
+
+  const filterTextRef = useRef(filterText);
+  filterTextRef.current = filterText;
+  const activityRef = useRef(300);
 
   const panRef = useRef(pan);
   panRef.current = pan;
@@ -80,6 +85,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
 
   // Extract flat graph of nodes & links from virtual filesystem
   useEffect(() => {
+    activityRef.current = 240;
     const nodes = new Map<string, GraphNode>();
     const links: GraphLink[] = [];
 
@@ -254,84 +260,90 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       const links = linksRef.current;
       const nodeMap = nodesRef.current;
 
-      // 1. Repulsion between nodes (Coulomb force)
-      for (let i = 0; i < nodes.length; i++) {
-        const a = nodes[i];
-        for (let j = i + 1; j < nodes.length; j++) {
-          const b = nodes[j];
+      if (isDraggingRef.current || isPanningRef.current) {
+        activityRef.current = 180;
+      }
+
+      // Run simulation steps when active, slumber when settled
+      if (activityRef.current > 0) {
+        activityRef.current--;
+
+        // 1. Repulsion between nodes (Coulomb force with collision clamping)
+        for (let i = 0; i < nodes.length; i++) {
+          const a = nodes[i];
+          for (let j = i + 1; j < nodes.length; j++) {
+            const b = nodes[j];
+            const dx = b.x - a.x;
+            const dy = b.y - a.y;
+            const minSafeDist = a.radius + b.radius + 6;
+            const distSq = Math.max(dx * dx + dy * dy, minSafeDist * minSafeDist);
+            const dist = Math.sqrt(distSq);
+            const force = (a.radius * b.radius * 160) / distSq;
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+
+            if (a.fx === null) { a.vx -= fx; a.vy -= fy; }
+            if (b.fx === null) { b.vx += fx; b.vy += fy; }
+          }
+        }
+
+        // 2. Spring attraction along links (Hooke's Law)
+        for (const link of links) {
+          const a = nodeMap.get(link.source);
+          const b = nodeMap.get(link.target);
+          if (!a || !b) continue;
           const dx = b.x - a.x;
           const dy = b.y - a.y;
-          const distSq = dx * dx + dy * dy + 100;
-          const dist = Math.sqrt(distSq);
-          const force = (a.radius * b.radius * 200) / distSq;
-          const fx = (dx / dist) * force;
-          const fy = (dy / dist) * force;
+          const dist = Math.hypot(dx, dy) || 1;
+          const delta = dist - link.length;
+          const springForce = delta * 0.045;
+          const fx = (dx / dist) * springForce;
+          const fy = (dy / dist) * springForce;
 
-          if (a.fx === null) { a.vx -= fx; a.vy -= fy; }
+          if (a.fx === null) { a.vx += fx; a.vy += fy; }
           if (b.fx === null) { b.vx += fx; b.vy += fy; }
         }
-      }
 
-      // 2. Spring attraction along links (Hooke's Law - equal & opposite forces!)
-      for (const link of links) {
-        const a = nodeMap.get(link.source);
-        const b = nodeMap.get(link.target);
-        if (!a || !b) continue;
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        const dist = Math.hypot(dx, dy) || 1;
-        const delta = dist - link.length;
-        const springForce = delta * 0.045;
-        const fx = (dx / dist) * springForce;
-        const fy = (dy / dist) * springForce;
-
-        // Equal and opposite! Node a pulled toward b (+fx), node b pulled toward a (-fx)
-        if (a.fx === null) { a.vx += fx; a.vy += fy; }
-        if (b.fx === null) { b.vx -= fx; b.vy -= fy; }
-      }
-
-      // 3. Center gravity (pull gently toward origin)
-      for (const n of nodes) {
-        const distFromCenter = Math.hypot(n.x, n.y) || 1;
-        const centerForce = distFromCenter * 0.0025;
-        if (n.fx === null) {
-          n.vx -= (n.x / distFromCenter) * centerForce;
-          n.vy -= (n.y / distFromCenter) * centerForce;
-        }
-      }
-
-      // 4. Update velocity and position with damping + ambient hover micro-drift + max velocity clamp
-      const MAX_VEL = 12.0;
-      for (const n of nodes) {
-        if (n.fx !== null && n.fy !== null) {
-          n.x = n.fx;
-          n.y = n.fy;
-          n.vx = 0;
-          n.vy = 0;
-        } else {
-          // Ambient gentle floating motion
-          const driftX = Math.sin(t + n.seed) * 0.15;
-          const driftY = Math.cos(t * 0.8 + n.seed * 1.3) * 0.15;
-
-          n.vx = (n.vx + driftX) * 0.82;
-          n.vy = (n.vy + driftY) * 0.82;
-
-          // Clamp velocity to strictly prevent explosive runaway
-          const speed = Math.hypot(n.vx, n.vy);
-          if (speed > MAX_VEL) {
-            n.vx = (n.vx / speed) * MAX_VEL;
-            n.vy = (n.vy / speed) * MAX_VEL;
+        // 3. Center gravity
+        for (const n of nodes) {
+          const distFromCenter = Math.hypot(n.x, n.y) || 1;
+          const centerForce = distFromCenter * 0.0025;
+          if (n.fx === null) {
+            n.vx -= (n.x / distFromCenter) * centerForce;
+            n.vy -= (n.y / distFromCenter) * centerForce;
           }
+        }
 
-          // Protect against NaN or Infinity
-          if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
-            n.x = (Math.random() - 0.5) * 80;
-            n.y = (Math.random() - 0.5) * 80;
+        // 4. Update velocity and position with damping + max velocity clamp
+        const MAX_VEL = 12.0;
+        for (const n of nodes) {
+          if (n.fx !== null && n.fy !== null) {
+            n.x = n.fx;
+            n.y = n.fy;
             n.vx = 0;
             n.vy = 0;
           } else {
-            n.x += n.vx;
-            n.y += n.vy;
+            const driftX = Math.sin(t + n.seed) * 0.15;
+            const driftY = Math.cos(t * 0.8 + n.seed * 1.3) * 0.15;
+
+            n.vx = (n.vx + driftX) * 0.82;
+            n.vy = (n.vy + driftY) * 0.82;
+
+            const speed = Math.hypot(n.vx, n.vy);
+            if (speed > MAX_VEL) {
+              n.vx = (n.vx / speed) * MAX_VEL;
+              n.vy = (n.vy / speed) * MAX_VEL;
+            }
+
+            if (!Number.isFinite(n.x) || !Number.isFinite(n.y)) {
+              n.x = (Math.random() - 0.5) * 80;
+              n.y = (Math.random() - 0.5) * 80;
+              n.vx = 0;
+              n.vy = 0;
+            } else {
+              n.x += n.vx;
+              n.y += n.vy;
+            }
           }
         }
       }
@@ -348,6 +360,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       const curZoom = zoomRef.current;
       const curHovered = hoveredNodeIdRef.current;
       const curConnected = connectedNodeIdsRef.current;
+      const curFilter = filterTextRef.current.trim().toLowerCase();
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -363,8 +376,10 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         const b = nodeMap.get(link.target);
         if (!a || !b) continue;
 
+        const aMatches = curFilter ? a.name.toLowerCase().includes(curFilter) : true;
+        const bMatches = curFilter ? b.name.toLowerCase().includes(curFilter) : true;
         const isHighlighted = curHovered && (link.source === curHovered || link.target === curHovered);
-        const isDimmed = curHovered && !isHighlighted;
+        const isDimmed = (curHovered && !isHighlighted) || (curFilter && !aMatches && !bMatches);
 
         ctx.beginPath();
         ctx.moveTo(a.x, a.y);
@@ -387,16 +402,17 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
 
       // Render nodes
       for (const n of nodes) {
+        const matchesFilter = curFilter ? n.name.toLowerCase().includes(curFilter) : true;
         const isHovered = curHovered === n.id;
         const isConnected = curConnected?.has(n.id);
-        const isDimmed = curHovered !== null && !isConnected;
+        const isDimmed = (curHovered !== null && !isConnected) || (!matchesFilter);
 
-        ctx.globalAlpha = isDimmed ? 0.22 : 1;
+        ctx.globalAlpha = isDimmed ? 0.16 : 1;
 
-        // Glow ring for hovered/selected nodes
-        if (isHovered || isConnected) {
+        // Glow ring for hovered/selected/matched nodes
+        if (isHovered || isConnected || (curFilter && matchesFilter)) {
           ctx.beginPath();
-          ctx.arc(n.x, n.y, n.radius + (isHovered ? 9 : 4), 0, Math.PI * 2);
+          ctx.arc(n.x, n.y, n.radius + (isHovered || (curFilter && matchesFilter) ? 8 : 4), 0, Math.PI * 2);
           ctx.fillStyle = n.glowColor;
           ctx.fill();
         }
@@ -407,15 +423,15 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         ctx.fillStyle = n.color;
         ctx.fill();
 
-        ctx.strokeStyle = isHovered ? '#ffffff' : 'rgba(8,9,13,0.85)';
-        ctx.lineWidth = isHovered ? 2.2 : 1.2;
+        ctx.strokeStyle = isHovered || (curFilter && matchesFilter) ? '#ffffff' : 'rgba(8,9,13,0.85)';
+        ctx.lineWidth = isHovered || (curFilter && matchesFilter) ? 2.2 : 1.2;
         ctx.stroke();
 
         // Node label
-        const showLabel = isHovered || n.type === 'dir' || curZoom > 0.82 || isConnected;
+        const showLabel = isHovered || n.type === 'dir' || curZoom > 0.82 || isConnected || (curFilter && matchesFilter);
         if (showLabel) {
-          ctx.font = `${isHovered ? 'bold ' : ''}${Math.max(9.5, 10 / curZoom)}px JetBrains Mono, monospace`;
-          ctx.fillStyle = isHovered ? '#ffffff' : (isDimmed ? 'rgba(160,170,188,0.3)' : '#a0aabc');
+          ctx.font = `${isHovered || (curFilter && matchesFilter) ? 'bold ' : ''}${Math.max(9.5, 10 / curZoom)}px JetBrains Mono, monospace`;
+          ctx.fillStyle = isHovered || (curFilter && matchesFilter) ? '#ffffff' : (isDimmed ? 'rgba(160,170,188,0.3)' : '#a0aabc');
           ctx.textAlign = 'center';
           ctx.fillText(n.name, n.x, n.y + n.radius + 12);
         }
@@ -435,6 +451,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
 
   // Pointer Handlers: Hold & Drag Physics with Single vs Double Click
   const onPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    activityRef.current = 180;
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
     const targetNode = getNodeAt(x, y);
 
@@ -457,6 +474,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
     const { x, y } = screenToCanvas(e.clientX, e.clientY);
 
     if (isDraggingRef.current) {
+      activityRef.current = 180;
       dragDistanceRef.current += Math.hypot(e.movementX, e.movementY);
       const node = nodesRef.current.get(isDraggingRef.current);
       if (node) {
@@ -466,6 +484,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         node.y = y;
       }
     } else if (isPanningRef.current) {
+      activityRef.current = 180;
       dragDistanceRef.current += Math.hypot(e.movementX, e.movementY);
       const nextPan = {
         x: e.clientX - panStartRef.current.x,
@@ -485,6 +504,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
   };
 
   const onPointerUp = (_e: React.PointerEvent<HTMLCanvasElement>) => {
+    activityRef.current = 180;
     const draggedId = isDraggingRef.current;
 
     if (draggedId) {
@@ -527,6 +547,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
   // Wheel: 2-Finger Pan & Pinch/Cmd Zoom
   const onWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
+    activityRef.current = 180;
     if (e.ctrlKey || e.metaKey) {
       // Pinch to zoom or Cmd/Ctrl+wheel
       const delta = -e.deltaY;
@@ -564,6 +585,47 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
         )}
       />
 
+      {/* Search & Filter Bar */}
+      <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
+        <div className="relative flex items-center">
+          <input
+            type="text"
+            value={filterText}
+            onChange={e => {
+              setFilterText(e.target.value);
+              activityRef.current = 180;
+            }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                const q = filterText.trim().toLowerCase();
+                if (!q) return;
+                const match = Array.from(nodesRef.current.values()).find(n => n.name.toLowerCase().includes(q));
+                if (match) {
+                  const nextPan = { x: -match.x * zoom, y: -match.y * zoom };
+                  panRef.current = nextPan;
+                  setPan(nextPan);
+                  setHoveredNodeId(match.id);
+                  activityRef.current = 180;
+                }
+              } else if (e.key === 'Escape') {
+                setFilterText('');
+                activityRef.current = 180;
+              }
+            }}
+            placeholder="Filter nodes… (↵ jump)"
+            className="w-36 sm:w-48 rounded-md border border-[var(--border-default)] bg-[var(--surface-overlay)]/90 px-2.5 py-1 text-[11px] font-mono text-[var(--text-primary)] placeholder-[var(--text-muted)] outline-none backdrop-blur focus:border-[var(--border-strong)] transition-all"
+          />
+          {filterText && (
+            <button
+              onClick={() => { setFilterText(''); activityRef.current = 180; }}
+              className="absolute right-2 text-[10px] text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Floating HUD Tooltip on Node Hover */}
       {hoveredNode && hoverPos && !isDraggingNode && (
         <div
@@ -583,7 +645,7 @@ export const ObsidianGraph = memo(function ObsidianGraph({ env, onNodeClick }: P
       {/* Graph View Controls */}
       <div className="absolute bottom-3 left-3 z-30 flex items-center gap-1.5 font-mono text-[10px]">
         <button
-          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); activityRef.current = 180; }}
           className="chip rounded border border-[var(--border-default)] bg-[var(--surface-card)] px-2 py-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
           title="Recenter and reset zoom"
         >

@@ -1,5 +1,5 @@
 import type { EnvState, TermLine, VizEvent } from './types';
-import { makeFile, resolvePath, ensureDir } from './fs';
+import { makeFile, resolvePath, ensureDir, displayPath } from './fs';
 
 export interface BrewFormula {
   name: string;
@@ -310,10 +310,20 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
     size: '3.1MB',
     filesCount: 8,
     execute: (args, _flags, _stdin, env) => {
-      const query = args[0];
+      const nonFlags = args.filter(a => !a.startsWith('-'));
+      const query = nonFlags[0];
+      const targetDir = nonFlags[1] ?? '.';
       if (!query) {
         return {
           lines: [{ segs: [{ t: 'rg: error: pattern required (usage: rg <pattern> [path])', c: 'err' }] }],
+          stdout: '',
+          ok: false,
+        };
+      }
+      const resolved = resolvePath(env, targetDir);
+      if (!resolved) {
+        return {
+          lines: [{ segs: [{ t: `rg: '${targetDir}': No such file or directory`, c: 'err' }] }],
           stdout: '',
           ok: false,
         };
@@ -329,7 +339,7 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
               totalMatches++;
               lines.push({
                 segs: [
-                  { t: path.replace(/^\/home\/user\/?/, '~/') + ':', c: 'violet', b: true },
+                  { t: displayPath(path) + ':', c: 'violet', b: true },
                   { t: String(idx + 1) + ':', c: 'ok' },
                   { t: l, c: 'fg' },
                 ],
@@ -344,10 +354,10 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
         }
       };
 
-      walk(env.fs, '/home/user');
+      walk(resolved.node, resolved.path);
 
       if (totalMatches === 0) {
-        lines.push({ segs: [{ t: `rg: no matches found for '${query}'`, c: 'dim' }] });
+        lines.push({ segs: [{ t: `rg: no matches found for '${query}' in ${displayPath(resolved.path)}`, c: 'dim' }] });
       }
 
       return {

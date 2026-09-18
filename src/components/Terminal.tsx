@@ -90,7 +90,7 @@ const Prompt = memo(function Prompt({ env }: { env: EnvState }) {
   );
 });
 
-const GIT_SUBS = ['init', 'add', 'commit', 'status', 'log', 'branch', 'diff'];
+const GIT_SUBS = ['init', 'add', 'commit', 'status', 'log', 'branch', 'diff', 'checkout', 'switch'];
 const NPM_SUBS = ['init -y', 'install', 'run', 'ls'];
 const BREW_SUBS = ['install', 'list', 'info', 'uninstall', 'update'];
 const OMZ_SUBS = ['install', 'theme', 'list'];
@@ -116,11 +116,11 @@ const InputHighlight = memo(function InputHighlight({ input }: { input: string }
   const segs = useMemo(() => highlightShellInput(input, KNOWN_COMMANDS), [input]);
   if (!segs.length) return null;
   return (
-    <span className="pointer-events-none whitespace-pre font-mono text-[13px] leading-[1.55]">
+    <>
       {segs.map((s, i) => (
         <span key={i} className={cn(s.c ? `c-${s.c}` : 'c-out', s.b && 'b-bold')}>{s.t}</span>
       ))}
-    </span>
+    </>
   );
 });
 
@@ -141,15 +141,23 @@ const Terminal = memo(function Terminal({
   demoRunning, env, inputRef,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const histIdx = useRef(-1);
   const draft = useRef('');
   const [tryOpen, setTryOpen] = useState(false);
   const tryRef = useRef<HTMLDivElement>(null);
 
+  const syncOverlayScroll = useCallback(() => {
+    if (inputRef.current && overlayRef.current) {
+      overlayRef.current.scrollLeft = inputRef.current.scrollLeft;
+    }
+  }, [inputRef]);
+
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [blocks, input]);
+    syncOverlayScroll();
+  }, [blocks, input, syncOverlayScroll]);
 
   // Close try dropdown on click outside
   useEffect(() => {
@@ -208,8 +216,12 @@ const Terminal = memo(function Terminal({
       }
     }
 
-    if (candidates.length === 1) setInput(candidates[0]);
-    else showIfMany(candidates);
+    if (candidates.length === 1) {
+      const completion = candidates[0];
+      setInput(completion.endsWith('/') ? completion : completion + ' ');
+    } else {
+      showIfMany(candidates);
+    }
   };
 
   const showIfMany = (candidates: string[]) => {
@@ -235,6 +247,60 @@ const Terminal = memo(function Terminal({
   }, [input, env.history, demoRunning]);
 
   const keyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // Readline shortcuts
+    if (e.ctrlKey) {
+      if (e.key === 'a') {
+        e.preventDefault();
+        inputRef.current?.setSelectionRange(0, 0);
+        return;
+      }
+      if (e.key === 'e') {
+        e.preventDefault();
+        const len = input.length;
+        inputRef.current?.setSelectionRange(len, len);
+        return;
+      }
+      if (e.key === 'u') {
+        e.preventDefault();
+        const pos = inputRef.current?.selectionStart ?? input.length;
+        const remainder = input.slice(pos);
+        setInput(remainder);
+        requestAnimationFrame(() => inputRef.current?.setSelectionRange(0, 0));
+        return;
+      }
+      if (e.key === 'k') {
+        e.preventDefault();
+        const pos = inputRef.current?.selectionStart ?? input.length;
+        setInput(input.slice(0, pos));
+        return;
+      }
+      if (e.key === 'w') {
+        e.preventDefault();
+        const pos = inputRef.current?.selectionStart ?? input.length;
+        if (pos > 0) {
+          const before = input.slice(0, pos);
+          const trimmed = before.replace(/\s+$/, '');
+          const lastSpace = Math.max(trimmed.lastIndexOf(' '), trimmed.lastIndexOf('/'));
+          const cutIdx = lastSpace === -1 ? 0 : lastSpace + 1;
+          const nextVal = input.slice(0, cutIdx) + input.slice(pos);
+          setInput(nextVal);
+          requestAnimationFrame(() => inputRef.current?.setSelectionRange(cutIdx, cutIdx));
+        }
+        return;
+      }
+      if (e.key === 'c') {
+        e.preventDefault();
+        onHint([{ segs: [{ t: '^C', c: 'err' }] }]);
+        setInput('');
+        return;
+      }
+      if (e.key === 'l') {
+        e.preventDefault();
+        onClear();
+        return;
+      }
+    }
+
     if (e.key === 'Enter') {
       const line = input.trim();
       histIdx.current = -1;
@@ -268,13 +334,25 @@ const Terminal = memo(function Terminal({
       if (tryOpen) { setTryOpen(false); return; }
       if (demoRunning) onCancelDemo();
       else setInput('');
-    } else if (e.key === 'c' && e.ctrlKey) {
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pasteData = e.clipboardData.getData('text');
+    if (pasteData.includes('\n')) {
       e.preventDefault();
-      onHint([{ segs: [{ t: '^C', c: 'err' }] }]);
-      setInput('');
-    } else if (e.key === 'l' && e.ctrlKey) {
-      e.preventDefault();
-      onClear();
+      const lines = pasteData.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+      if (lines.length === 1) {
+        setInput(input + lines[0]);
+      } else if (lines.length > 1) {
+        const endsWithNewline = pasteData.endsWith('\n') || pasteData.endsWith('\r\n');
+        const toExec = endsWithNewline ? lines : lines.slice(0, -1);
+        const remainder = endsWithNewline ? '' : lines[lines.length - 1];
+        for (const cmd of toExec) {
+          onExecute(cmd);
+        }
+        setInput(remainder);
+      }
     }
   };
 
@@ -287,7 +365,11 @@ const Terminal = memo(function Terminal({
   return (
     <div
       className="relative flex h-full flex-col bg-[var(--surface-panel)]"
-      onClick={() => inputRef.current?.focus()}
+      onClick={() => {
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) return;
+        inputRef.current?.focus();
+      }}
     >
       {/* Titlebar with muted window controls */}
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3 font-mono text-[11px]">
@@ -383,8 +465,14 @@ const Terminal = memo(function Terminal({
             <input
               ref={inputRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value);
+                syncOverlayScroll();
+              }}
+              onScroll={syncOverlayScroll}
+              onKeyUp={syncOverlayScroll}
               onKeyDown={keyDown}
+              onPaste={handlePaste}
               autoFocus
               readOnly={demoRunning}
               className="term-input min-w-0 w-full bg-transparent font-mono text-[13px] leading-[1.55] text-transparent caret-[var(--text-primary)] outline-none"
@@ -394,21 +482,18 @@ const Terminal = memo(function Terminal({
               autoCorrect="off"
               aria-label="terminal command input"
             />
-            {/* Syntax-highlighted overlay (visible text) */}
-            <div className="pointer-events-none absolute inset-0 flex items-center overflow-hidden">
-              {input ? (
-                <InputHighlight input={input} />
-              ) : blocks.length < 3 ? null : null}
+            {/* Syntax-highlighted overlay (visible text) synced with input scroll */}
+            <div
+              ref={overlayRef}
+              className="pointer-events-none absolute inset-0 flex items-center overflow-x-hidden whitespace-pre font-mono text-[13px] leading-[1.55]"
+            >
+              {input ? <InputHighlight input={input} /> : null}
+              {ghostSuggestion && (
+                <span className="font-mono text-[13px] leading-[1.55] text-[var(--text-muted)] opacity-50">
+                  {ghostSuggestion}
+                </span>
+              )}
             </div>
-            {/* Ghost suggestion */}
-            {ghostSuggestion && (
-              <span
-                className="pointer-events-none absolute top-0 font-mono text-[13px] leading-[1.55] text-[var(--text-muted)] opacity-50"
-                style={{ left: `${input.length}ch` }}
-              >
-                {ghostSuggestion}
-              </span>
-            )}
           </div>
         </div>
       </div>

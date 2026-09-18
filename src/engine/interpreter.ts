@@ -59,6 +59,8 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
   { name: 'sed', desc: 'stream editor for filtering/transforming (sed s/a/b/g)', group: 'files' },
   { name: 'awk', desc: 'pattern scanning and processing language', group: 'files' },
   { name: 'du', desc: 'estimate file space usage', group: 'files' },
+  { name: 'nano', desc: 'in-terminal visual file editor', group: 'files' },
+  { name: 'vim', desc: 'in-terminal visual file editor', group: 'files' },
 
   { name: 'git init', desc: 'initialize a repository', group: 'git' },
   { name: 'git add', desc: 'stage files (git add .)', group: 'git' },
@@ -66,6 +68,7 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
   { name: 'git status', desc: 'show working tree state', group: 'git' },
   { name: 'git log', desc: 'show commit history', group: 'git' },
   { name: 'git branch', desc: 'list or create branches', group: 'git' },
+  { name: 'git checkout', desc: 'switch branches (git checkout <branch> or -b)', group: 'git' },
   { name: 'git diff', desc: 'show changes between commits / working tree', group: 'git' },
 
   { name: 'npm init', desc: 'create package.json (npm init -y)', group: 'npm' },
@@ -82,6 +85,8 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
   { name: 'node', desc: 'execute a .js file (simulated)', group: 'proc' },
   { name: 'python', desc: 'execute a .py file (simulated)', group: 'proc' },
   { name: 'ps', desc: 'list processes', group: 'proc' },
+  { name: 'kill', desc: 'terminate a process by PID', group: 'proc' },
+  { name: 'pkill', desc: 'terminate processes by pattern', group: 'proc' },
   { name: 'xargs', desc: 'build and execute command lines from stdin', group: 'proc' },
   { name: 'which', desc: 'locate a command', group: 'proc' },
   { name: 'env', desc: 'display environment variables', group: 'proc' },
@@ -193,7 +198,7 @@ export function initialEnv(): EnvState {
   return {
     fs,
     cwd: HOME,
-    git: { init: false, root: '', branch: 'main', staged: [], dirty: [], commits: [] },
+    git: { init: false, root: '', branch: 'main', branches: ['main'], staged: [], dirty: [], commits: [] },
     packages: [],
     seq,
     user: 'dev',
@@ -216,6 +221,76 @@ export function initialEnv(): EnvState {
 }
 
 /* ------------------------------------------------------------------ */
+/* Variable expansion ($VAR, $?, $HOME, $PWD, ${VAR})                 */
+/* ------------------------------------------------------------------ */
+
+export function expandVars(input: string, env: EnvState, lastExitCode = 0): string {
+  let out = '';
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let i = 0;
+  while (i < input.length) {
+    const ch = input[i];
+    if (ch === '\\' && i + 1 < input.length) {
+      if (inSingleQuote) {
+        out += ch;
+        i++;
+        continue;
+      }
+      out += ch + input[i + 1];
+      i += 2;
+      continue;
+    }
+    if (ch === "'" && !inDoubleQuote) {
+      inSingleQuote = !inSingleQuote;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === '"' && !inSingleQuote) {
+      inDoubleQuote = !inDoubleQuote;
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === '$' && !inSingleQuote && i + 1 < input.length) {
+      if (input[i + 1] === '?') {
+        out += String(lastExitCode);
+        i += 2;
+        continue;
+      }
+      if (input[i + 1] === '{') {
+        const closeIdx = input.indexOf('}', i + 2);
+        if (closeIdx !== -1) {
+          const varName = input.slice(i + 2, closeIdx);
+          const val = varName === 'HOME' ? (env.vars.HOME || HOME)
+            : varName === 'PWD' ? env.cwd
+            : varName === 'USER' ? env.user
+            : (env.vars[varName] ?? '');
+          out += val;
+          i = closeIdx + 1;
+          continue;
+        }
+      }
+      const match = input.slice(i + 1).match(/^[a-zA-Z_][a-zA-Z0-9_]*/);
+      if (match) {
+        const varName = match[0];
+        const val = varName === 'HOME' ? (env.vars.HOME || HOME)
+          : varName === 'PWD' ? env.cwd
+          : varName === 'USER' ? env.user
+          : (env.vars[varName] ?? '');
+        out += val;
+        i += 1 + varName.length;
+        continue;
+      }
+    }
+    out += ch;
+    i++;
+  }
+  return out;
+}
+
+/* ------------------------------------------------------------------ */
 /* Tokenizing / splitting (quote-aware)                                */
 /* ------------------------------------------------------------------ */
 
@@ -223,7 +298,14 @@ function tokenize(s: string): string[] {
   const out: string[] = [];
   let cur = '';
   let quote: string | null = null;
-  const flush = () => { if (cur !== '') { out.push(cur); cur = ''; } };
+  let hasToken = false;
+  const flush = () => {
+    if (hasToken || cur !== '') {
+      out.push(cur);
+      cur = '';
+      hasToken = false;
+    }
+  };
   for (let i = 0; i < s.length; i++) {
     const ch = s[i];
     if (ch === '\\' && i + 1 < s.length) {
@@ -244,7 +326,7 @@ function tokenize(s: string): string[] {
       else cur += ch;
       continue;
     }
-    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; hasToken = true; continue; }
     if (ch === ' ' || ch === '\t') { flush(); continue; }
     if (ch === '|' || ch === '>' || ch === ';' || ch === '&') {
       if ((ch === '|' || ch === '>') && s[i + 1] === ch) {
@@ -375,8 +457,8 @@ class Exec {
   }
   untrack(absPath: string) {
     const g = this.env.git;
-    g.staged = g.staged.filter(p => p !== absPath);
-    if (g.init && absPath.startsWith(g.root) && !g.dirty.includes(absPath)) g.dirty.push(absPath);
+    g.staged = g.staged.filter(p => p !== absPath && !p.startsWith(absPath + '/'));
+    g.dirty = g.dirty.filter(p => p !== absPath && !p.startsWith(absPath + '/'));
   }
 }
 
@@ -568,7 +650,11 @@ const HANDLERS: Record<string, Handler> = {
       const abs = normalize(x.env.cwd, a);
       if (!abs) { x.err(`touch: cannot touch '${a}': outside sandbox`); return; }
       const existing = resolvePath(x.env, a);
-      if (existing) { x.flash(existing.node.id, '#3fdc9b', 'touched', 180 + i * 120); return; }
+      if (existing) {
+        existing.node.mtime = Date.now();
+        x.flash(existing.node.id, '#3fdc9b', 'touched', 180 + i * 120);
+        return;
+      }
       const parent = parentDir(x.env, abs);
       if (!parent) { x.err(`touch: cannot touch '${a}': No such file or directory`); return; }
       const node = makeFile(x.env, abs.split('/').pop()!);
@@ -602,8 +688,7 @@ const HANDLERS: Record<string, Handler> = {
   },
 
   echo: (x, args) => {
-    const text = args.join(' ');
-    if (text) x.out(text);
+    x.out(args.join(' '));
   },
 
   grep: (x, args) => {
@@ -739,16 +824,18 @@ const HANDLERS: Record<string, Handler> = {
     const d = resolvePath(x.env, dst);
     const srcPath = s.path;
     if (d && d.node.type === 'dir') {
-      if (d.node.children?.some(c => c.name === s.node.name)) { x.err(`mv: '${dst}/${s.node.name}' exists`); return; }
+      d.node.children = (d.node.children ?? []).filter(c => c.name !== s.node.name);
       s.parent.children = s.parent.children!.filter(c => c.id !== s.node.id);
-      d.node.children!.push(s.node);
+      d.node.children.push(s.node);
     } else {
       const abs = normalize(x.env.cwd, dst)!;
       const p = parentDir(x.env, abs);
       if (!p) { x.err(`mv: cannot move to '${dst}'`); return; }
       s.parent.children = s.parent.children!.filter(c => c.id !== s.node.id);
-      s.node.name = abs.split('/').pop()!;
-      p.children!.push(s.node);
+      const newName = abs.split('/').pop()!;
+      s.node.name = newName;
+      p.children = (p.children ?? []).filter(c => c.name !== newName);
+      p.children.push(s.node);
     }
     x.packet(s.node.id, s.node.id, '#a991f7', 'move', 150); // flash trail handled by position tween
     x.flash(s.node.id, '#a991f7', 'moved', 380);
@@ -806,7 +893,7 @@ const HANDLERS: Record<string, Handler> = {
 
     if (sub === 'init') {
       if (g.init) { x.err(`fatal: already a git repository at ${displayPath(g.root)}`); return; }
-      x.env.git = { init: true, root: x.env.cwd, branch: 'main', staged: [], dirty: [], commits: [] };
+      x.env.git = { init: true, root: x.env.cwd, branch: 'main', branches: ['main'], staged: [], dirty: [], commits: [] };
       const cwdNode = resolvePath(x.env, '.');
       if (cwdNode) {
         walkFiles(cwdNode.node, x.env.cwd, (_f, p) => { if (!p.includes('/.git/')) x.env.git.dirty.push(p); });
@@ -821,6 +908,8 @@ const HANDLERS: Record<string, Handler> = {
     }
 
     if (!g.init) { x.err('fatal: not a git repository (run: git init)'); return; }
+
+    if (!g.branches) g.branches = ['main'];
 
     if (sub === 'status') {
       x.outSegs([{ t: 'On branch ', c: 'fg' }, { t: g.branch, c: 'cyan', b: true }]);
@@ -907,14 +996,54 @@ const HANDLERS: Record<string, Handler> = {
     }
 
     if (sub === 'branch') {
+      const isDelete = args.includes('-d') || args.includes('-D');
       const bName = args.filter(a => !a.startsWith('-'))[1];
+      if (isDelete && bName) {
+        if (g.branch === bName) {
+          x.err(`error: cannot delete currently active branch '${bName}'`);
+          return;
+        }
+        g.branches = g.branches.filter(b => b !== bName);
+        x.show(`Deleted branch ${bName}.`, 'ok');
+        x.log('git', `branch -d ${bName}`);
+        return;
+      }
       if (bName) {
+        if (!g.branches.includes(bName)) g.branches.push(bName);
+        x.show(`Branch '${bName}' created`, 'ok');
+        x.log('git', `branch ${bName}`);
+      } else {
+        g.branches.forEach(b => {
+          const isCur = b === g.branch;
+          x.outSegs([
+            { t: isCur ? '* ' : '  ', c: isCur ? 'green' : 'dim' },
+            { t: b, c: isCur ? 'green' : 'fg', b: isCur },
+          ]);
+        });
+      }
+      return;
+    }
+
+    if (sub === 'checkout' || sub === 'switch') {
+      const isNew = args.includes('-b') || args.includes('-c');
+      const bName = args.filter(a => !a.startsWith('-'))[1];
+      if (!bName) {
+        x.err(`usage: git ${sub} [-b] <branch-name>`);
+        return;
+      }
+      if (isNew) {
+        if (!g.branches.includes(bName)) g.branches.push(bName);
         g.branch = bName;
-        x.show(`Switched to branch '${bName}'`, 'ok');
+        x.show(`Switched to a new branch '${bName}'`, 'ok');
         x.log('git', `checkout -b ${bName}`);
       } else {
-        x.outSegs([{ t: '* ', c: 'green' }, { t: g.branch, c: 'green', b: true }]);
-        if (g.branch !== 'main') x.out('  main', 'dim');
+        if (!g.branches.includes(bName)) {
+          x.err(`error: pathspec '${bName}' did not match any file(s) known to git. Use -b to create a new branch.`);
+          return;
+        }
+        g.branch = bName;
+        x.show(`Switched to branch '${bName}'`, 'ok');
+        x.log('git', `checkout ${bName}`);
       }
       return;
     }
@@ -936,7 +1065,7 @@ const HANDLERS: Record<string, Handler> = {
       return;
     }
 
-    x.err(`git: '${sub}' is not a git command — try: init, add, commit, status, log, branch, diff`);
+    x.err(`git: '${sub}' is not a git command — try: init, add, commit, status, log, branch, checkout, diff`);
   },
 
   /* ---------------- npm ---------------- */
@@ -1609,6 +1738,26 @@ const HANDLERS: Record<string, Handler> = {
     x.out(`uid=1000(${x.env.user}) gid=1000(${x.env.user}) groups=1000(${x.env.user}),4(adm),24(cdrom),27(sudo)`);
   },
 
+  kill: (x, args) => {
+    const target = nonFlags(args)[0];
+    if (!target) { x.err('usage: kill <pid>'); return; }
+    const pid = parseInt(target);
+    if (isNaN(pid)) { x.err(`kill: illegal pid: ${target}`); return; }
+    x.show(`[${pid}]  + done       terminated (SIGTERM)`, 'amber');
+    x.log('proc', `kill -15 ${pid}`, '#c4a46b');
+  },
+
+  pkill: (x, args) => {
+    const target = nonFlags(args)[0];
+    if (!target) { x.err('usage: pkill <process-name>'); return; }
+    x.show(`pkill: sent SIGTERM to processes matching '${target}'`, 'amber');
+    x.log('proc', `pkill ${target}`, '#c4a46b');
+  },
+
+  nano: (x, args) => openInEditor(x, nonFlags(args)[0], 'nano'),
+  vim: (x, args) => openInEditor(x, nonFlags(args)[0], 'vim'),
+  vi: (x, args) => openInEditor(x, nonFlags(args)[0], 'vi'),
+
   /* ---------------- program execution ---------------- */
 
   node: (x, args) => runProgram(x, nonFlags(args)[0], 'node'),
@@ -1764,6 +1913,32 @@ function runProgram(x: Exec, fileArg: string | undefined, runtime: string) {
   }
 }
 
+function openInEditor(x: Exec, fileArg: string | undefined, editorName: string) {
+  if (!fileArg) { x.err(`usage: ${editorName} <filename>`); return; }
+  const abs = normalize(x.env.cwd, fileArg);
+  if (!abs) { x.err(`${editorName}: cannot open '${fileArg}': outside sandbox`); return; }
+  let existing = resolvePath(x.env, fileArg);
+  let node: FsNode;
+  if (!existing) {
+    const p = parentDir(x.env, abs);
+    if (!p) { x.err(`${editorName}: cannot create '${fileArg}': directory does not exist`); return; }
+    node = makeFile(x.env, abs.split('/').pop()!);
+    p.children!.push(node);
+    x.flash(node.id, '#3fdc9b', '+ file', 100);
+    x.markDirty(abs);
+  } else {
+    if (existing.node.type === 'dir') {
+      x.err(`${editorName}: '${fileArg}' is a directory`);
+      return;
+    }
+    node = existing.node;
+  }
+  x.preview(node.id, abs);
+  x.flash(node.id, '#53c7f0', 'edit');
+  x.show(`✏ Opened ${displayPath(abs)} in inspector editor modal (click Edit to modify & Save)`, 'ok');
+  x.log('fs', `${editorName} ${displayPath(abs)}`, '#53c7f0');
+}
+
 /* ------------------------------------------------------------------ */
 /* Redirect writer                                                     */
 /* ------------------------------------------------------------------ */
@@ -1787,7 +1962,6 @@ function writeRedirect(x: Exec, target: string, append: boolean) {
   x.packet(TTY, node.id, '#f5b454', append ? 'append >>' : 'write >', 280);
   x.flash(node.id, '#f5b454', append ? '>>' : 'write', 560);
   x.markDirty(abs);
-  x.lines = x.lines.filter(l => !(l.segs.length === 1 && text.split('\n').includes(l.segs[0].t)));
   x.show(`↳ wrote ${humanSize(text.length)} → ${displayPath(abs)}`, 'ok');
   x.log('fs', `${append ? 'append' : 'write'} ${displayPath(abs)} (${humanSize(text.length)})`, '#f5b454', 400);
 }
@@ -1813,7 +1987,7 @@ function simulateUnknown(x: Exec, cmd: string, args: string[]) {
 const MUTATING_WORDS = [
   'cd', 'mkdir', 'touch', 'cp', 'mv', 'rm', 'chmod', 'chown', 'ln',
   'npm', 'curl', 'wget', 'export', 'alias', 'unalias', 'reset', 'clear',
-  'brew', 'omz', 'storage', 'import',
+  'brew', 'omz', 'storage', 'import', 'tee', 'nano', 'vim', 'vi',
 ];
 
 function isMutating(cmdLine: string): boolean {
@@ -1831,12 +2005,18 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
   if (!line.trim()) return { env, lines: [], events: [] };
   env.history.push(line);
 
-  const commands = splitTop(line, ['&&', ';']);
-  let blocked = false;
+  let lastExitCode = 0;
+  const commands = splitTop(line, ['&&', '||', ';']);
+  let runNext = true;
 
   for (const { text, sep } of commands) {
-    if (blocked) break;
-    const stagesRaw = splitTop(text, ['|']).map(s => s.text);
+    if (!runNext) {
+      if (sep === ';') runNext = true;
+      continue;
+    }
+
+    const expandedText = expandVars(text, env, lastExitCode);
+    const stagesRaw = splitTop(expandedText, ['|']).map(s => s.text);
     let stdin = '';
     let last: Exec | null = null;
     let lastRedirected = false;
@@ -1846,7 +2026,8 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
     const isPipe = stagesRaw.length > 1;
     const prePipeCwd = env.cwd;
 
-    for (const raw of stagesRaw) {
+    for (let stageIdx = 0; stageIdx < stagesRaw.length; stageIdx++) {
+      const raw = stagesRaw[stageIdx];
       const { tokens, target, append } = extractRedirect(tokenize(raw));
       if (!tokens.length) continue;
       const stageEnv = isPipe ? { ...env, cwd: prePipeCwd } : env;
@@ -1920,6 +2101,11 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       last = x;
       lastRedirected = !!target;
       lastTarget = target ?? '';
+
+      // If a non-final pipe stage had an error, include its error lines so they're not lost!
+      if (!x.ok && stageIdx < stagesRaw.length - 1) {
+        finalLines.push(...x.lines.filter(l => l.segs.some(s => s.c === 'err')));
+      }
     }
 
     if (isPipe) {
@@ -1939,10 +2125,23 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       finalLines.push(...(lastRedirected ? [] : last.lines));
       finalLines.push({ segs: [{ t: `  ↳ ${stageInfos.length}-stage pipeline · data flowed left → right`, c: 'info' }] });
     } else {
-      finalLines.push(...last.lines);
+      if (lastRedirected) {
+        finalLines.push(...last.lines.filter(l => l.segs.some(s => s.c === 'err' || s.c === 'ok' || s.c === 'info')));
+      } else {
+        finalLines.push(...last.lines);
+      }
     }
 
-    if (!last.ok && sep === '&&') blocked = true;
+    const currentExitCode = last.ok ? 0 : 1;
+    lastExitCode = currentExitCode;
+
+    if (sep === '&&') {
+      runNext = (currentExitCode === 0);
+    } else if (sep === '||') {
+      runNext = (currentExitCode !== 0);
+    } else if (sep === ';') {
+      runNext = true;
+    }
   }
 
   return { env, lines: finalLines, events: allEvents, clear };

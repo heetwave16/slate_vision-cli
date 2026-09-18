@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-:root {
+:root, [data-theme="slate"] {
   /* Matte surfaces */
   --surface-base: #08090d;
   --surface-panel: #0c0f16;
@@ -23,6 +23,111 @@
   --semantic-warning: #c4a46b;
   --semantic-info: #8ba9c9;
   --semantic-error: #cf8790;
+}
+
+[data-theme="dracula"] {
+  --surface-base: #1e1f29;
+  --surface-panel: #282a36;
+  --surface-card: #343746;
+  --surface-hover: #44475a;
+  --surface-overlay: #21222c;
+
+  --border-subtle: #383a59;
+  --border-default: #44475a;
+  --border-strong: #6272a4;
+
+  --text-primary: #f8f8f2;
+  --text-secondary: #bd93f9;
+  --text-muted: #6272a4;
+
+  --semantic-success: #50fa7b;
+  --semantic-warning: #ffb86c;
+  --semantic-info: #8be9fd;
+  --semantic-error: #ff5555;
+}
+
+[data-theme="nord"] {
+  --surface-base: #242933;
+  --surface-panel: #2e3440;
+  --surface-card: #3b4252;
+  --surface-hover: #434c5e;
+  --surface-overlay: #2e3440;
+
+  --border-subtle: #3b4252;
+  --border-default: #4c566a;
+  --border-strong: #5e81ac;
+
+  --text-primary: #eceff4;
+  --text-secondary: #d8dee9;
+  --text-muted: #7e8eab;
+
+  --semantic-success: #a3be8c;
+  --semantic-warning: #ebcb8b;
+  --semantic-info: #88c0d0;
+  --semantic-error: #bf616a;
+}
+
+[data-theme="tokyo-night"] {
+  --surface-base: #16161e;
+  --surface-panel: #1a1b26;
+  --surface-card: #24283b;
+  --surface-hover: #2f354f;
+  --surface-overlay: #1f2335;
+
+  --border-subtle: #292e42;
+  --border-default: #3b4261;
+  --border-strong: #545c7e;
+
+  --text-primary: #c0caf5;
+  --text-secondary: #9aa5ce;
+  --text-muted: #565f89;
+
+  --semantic-success: #9ece6a;
+  --semantic-warning: #e0af68;
+  --semantic-info: #7aa2f7;
+  --semantic-error: #f7768e;
+}
+
+[data-theme="monokai-pro"] {
+  --surface-base: #19181a;
+  --surface-panel: #221f22;
+  --surface-card: #2d2a2e;
+  --surface-hover: #3a373b;
+  --surface-overlay: #2d2a2e;
+
+  --border-subtle: #3a373b;
+  --border-default: #49454b;
+  --border-strong: #726e75;
+
+  --text-primary: #fcfcfa;
+  --text-secondary: #939293;
+  --text-muted: #726e75;
+
+  --semantic-success: #a9dc76;
+  --semantic-warning: #ffd866;
+  --semantic-info: #78dce8;
+  --semantic-error: #ff6188;
+}
+
+[data-theme="cyberpunk"] {
+  --surface-base: #05070e;
+  --surface-panel: #0d111d;
+  --surface-card: #151c2e;
+  --surface-hover: #1f2942;
+  --surface-overlay: #121727;
+
+  --border-subtle: #1e2840;
+  --border-default: #2d3d63;
+  --border-strong: #00f0ff;
+
+  --text-primary: #fcee0a;
+  --text-secondary: #00f0ff;
+  --text-muted: #7082a6;
+
+  --semantic-success: #05ffa1;
+  --semantic-warning: #fcee0a;
+  --semantic-info: #00f0ff;
+  --semantic-error: #ff0055;
 }
 
 @theme {
@@ -99,6 +204,16 @@ body {
 .c-blue  { color: var(--semantic-info); }
 .c-fg    { color: var(--text-primary); }
 .b-bold  { font-weight: 600; }
+
+.text-fg       { color: var(--text-primary); }
+.text-fg-dim   { color: var(--text-secondary); }
+.text-fg-faint { color: var(--text-muted); }
+.text-cyan     { color: var(--semantic-info); }
+.text-amber    { color: var(--semantic-warning); }
+.text-green    { color: var(--semantic-success); }
+.text-rose     { color: var(--semantic-error); }
+.text-violet   { color: var(--text-secondary); }
+.bg-cyan       { background-color: var(--semantic-info); }
 
 .term-caret { caret-color: var(--text-primary); }
 .term-input::placeholder { color: var(--text-muted); }
