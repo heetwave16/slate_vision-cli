@@ -1,5 +1,5 @@
 /* ================================================================== */
-/*  Shellscope real git engine                                        */
+/*  Slate real git engine                                        */
 /*  Implements genuine git semantics on top of the virtual FS:        */
 /*  content snapshots (trees), SHA-1 object hashes, LCS line diffs,   */
 /*  index (staging), branches, and working-tree sync on checkout.     */

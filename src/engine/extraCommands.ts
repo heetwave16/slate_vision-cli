@@ -1,5 +1,5 @@
 /* ================================================================== */
-/*  Shellscope — the "real terminal" command set                      */
+/*  Slate — the "real terminal" command set                      */
 /*  Every command a real macOS terminal has, mapped onto the virtual  */
 /*  sandbox. Each one drives the live previews (flash/packet/proc/    */
 /*  stage/log) just like the core commands do.                        */
@@ -202,7 +202,7 @@ const FAKE_PROCS = [
   { pid: 342, user: 'dev', cpu: '0.4', mem: '1.2', cmd: '/System/Library/CoreServices/WindowServer' },
   { pid: 812, user: 'dev', cpu: '1.1', mem: '2.4', cmd: 'node /usr/local/bin/npm' },
   { pid: 813, user: 'dev', cpu: '0.2', mem: '0.8', cmd: 'zsh' },
-  { pid: 4242, user: 'dev', cpu: '3.2', mem: '6.1', cmd: 'ShellScope (terminal)' },
+  { pid: 4242, user: 'dev', cpu: '3.2', mem: '6.1', cmd: 'Slate (terminal)' },
 ];
 
 const top: Handler = (x) => {
@@ -401,7 +401,7 @@ const launchctl: Handler = (x) => {
   x.out('PID\tStatus\tLabel');
   x.out('0\t0\tcom.apple.systemstatus');
   x.out('342\t0\tcom.apple.windowserver');
-  x.out('812\t0\tdev.shellscope.daemon');
+  x.out('812\t0\tdev.slate.daemon');
   x.log('sys', 'launchctl: 3 agents', '#6ea1ff');
 };
 

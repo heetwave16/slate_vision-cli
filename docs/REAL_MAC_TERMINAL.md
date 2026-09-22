@@ -1,4 +1,4 @@
-# Turning ShellScope into a REAL Mac Terminal App (with animated previews)
+# Turning Slate into a REAL Mac Terminal App (with animated previews)
 
 The current app runs a **virtual** sandbox: every command is emulated in the browser.
 This document describes the architecture that keeps the exact same UI and animation
@@ -81,10 +81,10 @@ before/after snapshots:
 # ~/.zshrc (injected by the daemon via ZDOTDIR, never edits the user's file)
 preexec() {
   echo "{\"t\":\"start\",\"cmd\":\"${HISTCMD:-}\",\"line\":\"${1}\",\"cwd\":\"$PWD\"}" \
-    | nc -U /tmp/shellscope.sock 2>/dev/null &
+    | nc -U /tmp/slate.sock 2>/dev/null &
 }
 precmd() {
-  echo "{\"t\":\"end\",\"rc\":$?}" | nc -U /tmp/shellscope.sock 2>/dev/null &
+  echo "{\"t\":\"end\",\"rc\":$?}" | nc -U /tmp/slate.sock 2>/dev/null &
 }
 ```
 

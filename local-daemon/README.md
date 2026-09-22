@@ -1,4 +1,4 @@
-# shellscope-live-daemon
+# slate-live-daemon
 
 Runs the **real shell** (`$SHELL`, zsh on macOS) in a PTY and streams its
 side-effects as ShellScope `VizEvent`s over a localhost WebSocket — the same
@@ -18,9 +18,9 @@ shown, and the xterm.js pane attaches to your real shell.
 
 | Var | Default | Meaning |
 |---|---|---|
-| `SHELLSCOPE_PORT` | `8787` | WS port (127.0.0.1 only) |
-| `SHELLSCOPE_SHELL` | `$SHELL` / `/bin/zsh` | shell binary to spawn |
-| `SHELLSCOPE_CWD` | `$HOME` | starting dir + fsevents watch root |
+| `SLATE_PORT` | `8787` | WS port (127.0.0.1 only) |
+| `SLATE_SHELL` | `$SHELL` / `/bin/zsh` | shell binary to spawn |
+| `SLATE_CWD` | `$HOME` | starting dir + fsevents watch root |
 
 ## Protocol (JSON over WS)
 
@@ -30,7 +30,7 @@ daemon → browser: `{kind:'data', data}` (raw PTY) · `{kind:'event', event:Viz
 
 ## How observation works
 
-- **fsevents** (via chokidar) on `$SHELLSCOPE_CWD`, depth 8, ignoring
+- **fsevents** (via chokidar) on `$SLATE_CWD`, depth 8, ignoring
   `node_modules`/`.git/objects` → `flash` events with the same
   A/M/D colors the sandbox uses.
 - **git**: `rev-parse HEAD` / `branch --show-current` / `log -n 6` /

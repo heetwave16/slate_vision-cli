@@ -1,5 +1,5 @@
 {
-  "name": "shellscope-live-daemon",
+  "name": "slate-live-daemon",
   "version": "0.1.0",
   "private": true,
   "type": "module",

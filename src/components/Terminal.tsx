@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import type { EnvState, TermBlock, TermColor, TermLine, TermSeg } from '../engine/types';
+import type { EnvState, TermBlock, TermLine, TermSeg } from '../engine/types';
 import { COMMANDS } from '../engine/interpreter';
 import { displayPath, resolvePath } from '../engine/fs';
 import { highlightShellInput } from '../utils/syntaxHighlight';

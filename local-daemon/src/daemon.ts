@@ -1,7 +1,7 @@
 /* ================================================================== */
-/*  ShellScope Live daemon                                            */
+/*  Slate Live daemon                                            */
 /*  Runs the REAL shell (zsh) in a PTY on the user's Mac and streams  */
-/*  1) raw terminal I/O  2) observations as ShellScope VizEvents      */
+/*  1) raw terminal I/O  2) observations as Slate VizEvents      */
 /*  over a localhost WebSocket so the web UI can animate them.        */
 /* ================================================================== */
 
@@ -15,7 +15,7 @@ import chokidar, { type FSWatcher } from 'chokidar';
 import { WebSocketServer, WebSocket } from 'ws';
 import { classify, type StageKind } from './classify.js';
 
-const PORT = Number(process.env.SHELLSCOPE_PORT ?? 8787);
+const PORT = Number(process.env.SLATE_PORT ?? 8787);
 const HOST = '127.0.0.1'; // never expose the real shell to the network
 const TOKEN = randomBytes(12).toString('hex');
 const WATCH_DEPTH = 8;
@@ -255,14 +255,14 @@ function extractHost(line: string): string | null {
 /* ------------------------------------------------------------------ */
 
 function main() {
-  const shell = process.env.SHELLSCOPE_SHELL ?? process.env.SHELL ?? '/bin/zsh';
-  const startCwd = process.env.SHELLSCOPE_CWD ?? os.homedir();
+  const shell = process.env.SLATE_SHELL ?? process.env.SHELL ?? '/bin/zsh';
+  const startCwd = process.env.SLATE_CWD ?? os.homedir();
 
   const term = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 100, rows: 32,
     cwd: startCwd,
-    env: { ...process.env, TERM_PROGRAM: 'shellscope', SHELLSCOPE_LIVE: '1' } as Record<string, string>,
+    env: { ...process.env, TERM_PROGRAM: 'slate', SLATE_LIVE: '1' } as Record<string, string>,
   });
 
   const wss = new WebSocketServer({ host: HOST, port: PORT });
@@ -271,7 +271,7 @@ function main() {
   wss.on('connection', (ws, req) => {
     const url = new URL(req.url ?? '/', `http://${HOST}:${PORT}`);
     if (url.searchParams.get('token') !== TOKEN) { ws.close(4401); return; }
-    console.log('[shellscope] client connected');
+    console.log('[slate] client connected');
 
     if (!watcher) {
       watcher = chokidar.watch([startCwd], {
@@ -279,7 +279,7 @@ function main() {
         ignored: /(^|\/)(node_modules|\.git\/(objects|logs)|\.[^/]+$|dist|build)/,
         awaitWriteFinish: { stabilityThreshold: 120, pollInterval: 40 },
       });
-      console.log(`[shellscope] watching ${startCwd} (depth ${WATCH_DEPTH})`);
+      console.log(`[slate] watching ${startCwd} (depth ${WATCH_DEPTH})`);
     }
 
     const session = new LiveSession(ws, watcher);
@@ -334,15 +334,15 @@ function main() {
     });
 
     ws.on('close', () => {
-      console.log('[shellscope] client disconnected');
+      console.log('[slate] client disconnected');
       session.dead = true;
       // keep the daemon alive for the next client
     });
   });
 
-  console.log(`[shellscope] live daemon on ws://${HOST}:${PORT}?token=${TOKEN}`);
-  console.log(`[shellscope] shell: ${shell}  cwd: ${startCwd}`);
-  console.log('[shellscope] (Ctrl-C to stop; the browser "Go Live" button connects here)');
+  console.log(`[slate] live daemon on ws://${HOST}:${PORT}?token=${TOKEN}`);
+  console.log(`[slate] shell: ${shell}  cwd: ${startCwd}`);
+  console.log('[slate] (Ctrl-C to stop; the browser "Go Live" button connects here)');
 
   const shutdown = () => {
     try { term.kill(); } catch { /* ignore */ }
