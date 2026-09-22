@@ -4,8 +4,9 @@ import Terminal from './components/Terminal';
 import FsCanvas from './components/FsCanvas';
 import StageOverlay from './components/StagePanels';
 import { EventLog, ProcessStrip } from './components/SidePanels';
-import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H } from './engine/fs';
+import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H, findNodeById } from './engine/fs';
 import { DEMO_SCRIPT, executeCommand, initialEnv } from './engine/interpreter';
+import { retrack } from './engine/git';
 import { AnimationBus, AbortError } from './engine/animationBus';
 import { cn } from './utils/cn';
 import {
@@ -245,6 +246,8 @@ export default function App() {
 
   // File Inspector & Node Highlights
   const [preview, setPreview] = useState<ActivePreview | null>(null);
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
 
   // Diagnostics drawer collapsed/expanded state (default collapsed: 28px)
@@ -315,11 +318,7 @@ export default function App() {
       dur: 1.2,
     }]);
     addLog('fs', `saved ${node.node.name} (${content.length} B)`);
-    if (envRef.current.git.init && node.path.startsWith(envRef.current.git.root)) {
-      if (!envRef.current.git.dirty.includes(node.path)) {
-        envRef.current.git.dirty.push(node.path);
-      }
-    }
+    if (envRef.current.git.init) retrack(envRef.current);
   }, [addLog]);
 
   /* ---------------- event scheduler ---------------- */
@@ -405,6 +404,20 @@ export default function App() {
     const res = executeCommand(line, before);
     envRef.current = res.env;
     setEnv(res.env);
+
+    // Real-time File Inspector: if a command mutated/deleted the open file,
+    // reflect it immediately (git checkout, rm, echo > file, saves, …)
+    const pv = previewRef.current;
+    if (pv) {
+      const node = findNodeById(res.env.fs, pv.nodeId);
+      if (!node || node.type !== 'file') {
+        setPreview(null);
+        addLog('fs', `inspector closed — ${pv.name} no longer exists`, '#f2708a');
+      } else if ((node.content ?? '') !== pv.content) {
+        setPreview({ ...pv, content: node.content ?? '' });
+        addLog('fs', `${pv.name} changed by command — inspector updated`, '#53c7f0');
+      }
+    }
 
     if (line.trim().startsWith('reset')) {
       abortControllerRef.current.abort();

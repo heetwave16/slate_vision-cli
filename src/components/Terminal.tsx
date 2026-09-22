@@ -37,12 +37,13 @@ export function getPromptSegs(env: EnvState): TermSeg[] {
     : '';
 
   if (theme === 'robbyrussell') {
-    return [
+    const segs: TermSeg[] = [
       { t: '➜  ', c: env.git.dirty.length > 0 ? 'amber' : 'green', b: true },
       { t: cwd, c: 'cyan', b: true },
-      ...(gitInfo ? [{ t: ' ' + gitInfo, c: (env.git.dirty.length > 0 ? 'amber' : 'info') as TermColor }] : []),
       { t: ' ', c: 'dim' },
     ];
+    if (gitInfo) segs.splice(2, 0, { t: ' ' + gitInfo, c: env.git.dirty.length > 0 ? 'amber' : 'info' });
+    return segs;
   }
 
   if (theme === 'agnoster') {
@@ -90,7 +91,7 @@ const Prompt = memo(function Prompt({ env }: { env: EnvState }) {
   );
 });
 
-const GIT_SUBS = ['init', 'add', 'commit', 'status', 'log', 'branch', 'diff'];
+const GIT_SUBS = ['init', 'add', 'commit', 'status', 'log', 'diff', 'branch', 'checkout', 'switch', 'show', 'push', 'rm', '-b', '-p', '--oneline', '--staged'];
 const NPM_SUBS = ['init -y', 'install', 'run', 'ls'];
 const BREW_SUBS = ['install', 'list', 'info', 'uninstall', 'update'];
 const OMZ_SUBS = ['install', 'theme', 'list'];
@@ -293,9 +294,9 @@ const Terminal = memo(function Terminal({
       <div className="flex h-9 shrink-0 items-center justify-between border-b border-[var(--border-default)] px-3 font-mono text-[11px]">
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5" aria-hidden="true">
-            <span className="h-2 w-2 rounded-full bg-[#2a3144]" />
-            <span className="h-2 w-2 rounded-full bg-[#2a3144]" />
-            <span className="h-2 w-2 rounded-full bg-[#2a3144]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#3a3f4d] transition-colors duration-150 hover:bg-[#ff5f57]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#3a3f4d] transition-colors duration-150 hover:bg-[#febc2e]" />
+            <span className="h-2.5 w-2.5 rounded-full bg-[#3a3f4d] transition-colors duration-150 hover:bg-[#28c840]" />
           </div>
           <span className="ml-1 text-[var(--text-secondary)]">
             zsh — dev@sandbox

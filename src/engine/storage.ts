@@ -1,7 +1,7 @@
 import type { EnvState } from './types';
 
-const STORAGE_KEY = 'slate_sandbox_state_v2';
-const STORAGE_META_KEY = 'slate_sandbox_meta_v2';
+const STORAGE_KEY = 'slate_sandbox_state_v3';
+const STORAGE_META_KEY = 'slate_sandbox_meta_v3';
 
 export interface StorageMetadata {
   lastSaved: number;
@@ -28,7 +28,7 @@ export function savePersistentEnv(env: EnvState): boolean {
     window.localStorage.setItem(STORAGE_KEY, serialized);
     const meta: StorageMetadata = {
       lastSaved: Date.now(),
-      version: '2.0.0',
+      version: '3.0.0',
       bytes: serialized.length * 2, // rough UTF-16 bytes
     };
     window.localStorage.setItem(STORAGE_META_KEY, JSON.stringify(meta));
@@ -45,7 +45,7 @@ export function loadPersistentEnv(): EnvState | null {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as EnvState;
-    if (parsed && parsed.fs && parsed.cwd && parsed.git && Array.isArray(parsed.history)) {
+    if (parsed && parsed.fs && parsed.cwd && parsed.git && Array.isArray(parsed.history) && isGitStateValid(parsed.git)) {
       return parsed;
     }
     return null;
@@ -80,7 +80,7 @@ export function getStorageMetadata(): StorageMetadata | null {
 export function exportStorageSnapshot(env: EnvState): string {
   const snapshot = {
     app: 'Slate',
-    version: '2.0.0',
+    version: '3.0.0',
     exportedAt: new Date().toISOString(),
     env,
   };
@@ -100,11 +100,24 @@ export function triggerDownload(filename: string, content: string, mimeType = 'a
   URL.revokeObjectURL(url);
 }
 
+/** Validate the real-git state shape (v3). Old v2 saves are rejected. */
+function isGitStateValid(g: EnvState['git']): boolean {
+  return !!g && typeof g.init === 'boolean'
+    && typeof g.branch === 'string'
+    && g.branches && typeof g.branches === 'object'
+    && g.commits && typeof g.commits === 'object'
+    && Array.isArray(g.order)
+    && g.index && typeof g.index === 'object';
+}
+
 export function importStorageSnapshot(jsonStr: string): EnvState {
   const parsed = JSON.parse(jsonStr);
   const env = parsed.env ?? parsed;
   if (!env.fs || !env.cwd || !env.git || !Array.isArray(env.history)) {
     throw new Error('Invalid Slate snapshot structure: missing essential virtual environment fields.');
+  }
+  if (!isGitStateValid(env.git)) {
+    throw new Error('Snapshot uses an outdated git format — clear storage and start fresh.');
   }
   return env as EnvState;
 }

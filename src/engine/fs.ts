@@ -122,6 +122,15 @@ export function deepCloneNode(env: EnvState, n: FsNode, name?: string): FsNode {
   return copy;
 }
 
+export function findNodeById(root: FsNode, id: string): FsNode | null {
+  if (root.id === id) return root;
+  for (const c of root.children ?? []) {
+    const f = findNodeById(c, id);
+    if (f) return f;
+  }
+  return null;
+}
+
 export function countNodes(n: FsNode): { dirs: number; files: number } {
   let dirs = 0, files = 0;
   const walk = (x: FsNode) => {

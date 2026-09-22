@@ -1,6 +1,8 @@
 import { initialEnv, executeCommand, COMMANDS } from '../src/engine/interpreter';
 import type { EnvState } from '../src/engine/types';
-import { resolvePath } from '../src/engine/fs';
+import { resolvePath, findNodeById } from '../src/engine/fs';
+import { sha1Hex } from '../src/engine/hash';
+import { blobHash, treeHash } from '../src/engine/git';
 
 interface TestResult {
   category: string;
@@ -186,20 +188,66 @@ runTest('Text Processing', 'tee command', 'echo "sample" | tee sample.txt', (env
 });
 
 // 4. Git Emulation Workflow
-runTest('Git', 'full git lifecycle', 'git init -> add -> commit -> status -> log -> branch', (env) => {
+runTest('Git', 'full git lifecycle (real engine)', 'init -> add -> commit -> branch -> checkout -> diff -> commit', (env) => {
   const res1 = executeCommand('git init', env);
   assert(res1.env.git.init === true, 'git init should initialize repo');
-  const res2 = executeCommand('touch test_git.txt', res1.env);
+  const res2 = executeCommand('echo "line one" > notes.txt', res1.env);
   const res3 = executeCommand('git status', res2.env);
-  assert(res3.lines.some(l => l.segs.some(s => s.t.includes('Untracked') || s.t.includes('test_git.txt'))), 'git status should show untracked');
+  assert(res3.lines.some(l => l.segs.some(s => s.t.includes('Untracked') || s.t.includes('notes.txt'))), 'git status should list notes.txt as untracked');
   const res4 = executeCommand('git add .', res3.env);
-  assert(res4.env.git.staged.length > 0, 'git add should stage files');
+  assert(res4.env.git.index[resolvePath(res4.env, 'notes.txt').path] !== undefined, 'git add should index the file');
   const res5 = executeCommand('git commit -m "feat: initial test commit"', res4.env);
-  assert(res5.env.git.commits.length === 1, 'git commit should record commit');
+  assert(Object.keys(res5.env.git.commits).length === 1, 'git commit should record a commit');
+  assert(res5.env.git.headHash !== null, 'git commit should move HEAD');
   const res6 = executeCommand('git log', res5.env);
   assert(res6.lines.some(l => l.segs.some(s => s.t.includes('feat: initial test commit'))), 'git log should show commit message');
   const res7 = executeCommand('git branch feature/test', res5.env);
-  assert(res7.lines.length > 0 || res7.env.git.branch === 'feature/test', 'git branch should succeed');
+  assert(res7.lines.length > 0, 'git branch should print confirmation');
+  const res8 = executeCommand('git checkout feature/test', res7.env);
+  assert(res8.env.git.branch === 'feature/test', 'git checkout should switch branch');
+  // real content change on the branch
+  const res9 = executeCommand('echo "line two" >> notes.txt', res8.env);
+  const res10 = executeCommand('git diff', res9.env);
+  assert(res10.lines.some(l => l.segs.some(s => s.t.includes('line two'))), 'git diff should show the new working-tree line');
+  const res11 = executeCommand('git add . && git commit -m "feat: second line"', res10.env);
+  assert(Object.keys(res11.env.git.commits).length === 2, 'second commit should be recorded');
+  const res12 = executeCommand('git checkout main', res11.env);
+  const notes = resolvePath(res12.env, 'notes.txt').node;
+  assert(notes && notes.type === 'file' && 'content' in notes && notes.content === 'line one\n', 'checkout main should physically restore the old file content');
+  const res13 = executeCommand('git log --oneline', res12.env);
+  assert(res13.lines.some(l => l.segs.some(s => s.t.includes('feat: initial test commit'))), 'git log --oneline on main shows first commit only');
+});
+
+runTest('Git', 'commit hashes + show/branch/rm/push', 'sha1 object ids, git show, push, git rm', (env) => {
+  let e = executeCommand('git init', env).env;
+  e = executeCommand('echo "hello" > a.txt', e).env;
+  e = executeCommand('git add .', e).env;
+  const r = executeCommand('git commit -m "x"', e);
+  const hash1 = r.env.git.headHash;
+  const commit = r.env.git.commits[hash1!];
+  assert(hash1 && commit.hash === hash1, 'commit hash should be self-consistent');
+  const p = resolvePath(r.env, 'a.txt').path;
+  assert(commit.tree[p] === 'hello\n', 'tree should snapshot the file content');
+  assert(blobHash('hello\n') === sha1Hex('blob 6\x00hello\n'), 'blob hash follows the real git blob format');
+  const expected = sha1Hex(
+    `tree ${treeHash(commit.tree)}\n` +
+    `author ${commit.author} <${commit.at}> +0000\n` +
+    `committer ${commit.author} <${commit.at}> +0000\n\n` +
+    `${commit.msg}\n`,
+  );
+  assert(commit.hash === expected, 'commit hash is the sha1 of the real commit object payload');
+  const show = executeCommand('git show', r.env);
+  assert(show.lines.some(l => l.segs.some(s => s.t.includes('hello'))), 'git show should render the patch with the file content');
+  const br = executeCommand('git branch b1', r.env);
+  assert(br.env.git.branches['b1'] !== undefined, 'branch b1 should exist');
+  const co = executeCommand('git checkout b1', br.env);
+  assert(co.env.git.branch === 'b1', 'checkout b1 should switch');
+  const rm = executeCommand('git rm a.txt', co.env);
+  assert(resolvePath(rm.env, 'a.txt') === null, 'git rm should delete the file');
+  const push = executeCommand('git push origin b1', rm.env);
+  assert(push.env.git.branches['origin/b1'] !== undefined, 'git push should create origin/b1');
+  const status = executeCommand('git status', push.env);
+  assert(status.lines.some(l => l.segs.some(s => s.t.includes('a.txt'))), 'git status after rm should mention the deletion');
 });
 
 // 5. Package Management
