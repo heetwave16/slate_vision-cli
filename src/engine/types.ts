@@ -59,6 +59,10 @@ export interface EnvState {
   aliases: Record<string, string>;
   promptTheme?: string;
   installedBrew?: Record<string, { version: string; bin: string; formula: string; desc: string; installedAt: number }>;
+  lastExit?: number;     // $?
+  clipboard?: string;    // pbcopy / pbpaste
+  pid?: number;          // $$ — fake but stable session pid
+  pushdStack?: string[]; // directory stack
 }
 
 /* ------------------------------------------------------------------ */

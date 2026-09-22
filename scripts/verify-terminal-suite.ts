@@ -250,6 +250,89 @@ runTest('Git', 'commit hashes + show/branch/rm/push', 'sha1 object ids, git show
   assert(status.lines.some(l => l.segs.some(s => s.t.includes('a.txt'))), 'git status after rm should mention the deletion');
 });
 
+// 4b. Full "real terminal" command set
+runTest('RealTerminal', 'env var + special expansion', 'export, echo $V, $?, $$, ~', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  run('export FOO=bar42');
+  const echo = run('echo $FOO');
+  assert(echo.lines[0]?.segs[0].t === 'bar42', 'echo $FOO should print the exported value');
+  const home = run('echo ~');
+  assert(home.lines[0]?.segs[0].t === '/home/user', 'echo ~ should expand to HOME');
+  const pid = run('echo $$');
+  assert(/^\d+$/.test(pid.lines[0]?.segs[0].t ?? ''), 'echo $$ should print a numeric pid');
+  const fail = run('ls /nope-such-dir');
+  assert(fail.lines.some(l => l.segs.some(s => s.c === 'err')), 'ls missing dir should error');
+  const code = run('echo $?');
+  assert(code.lines[0]?.segs[0].t === '1', '$? should be 1 after a failed command');
+});
+
+runTest('RealTerminal', 'text tools', 'seq/rev/nl/cksum/shasum/basename/realpath', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const seq = run('seq 3');
+  const seqOut = seq.lines.map(l => l.segs.map(s => s.t).join('')).join('\n');
+  assert(seqOut === '1\n2\n3', 'seq 3 should print 1..3 (got: ' + JSON.stringify(seqOut) + ')');
+  const rev = run('echo hello | rev');
+  assert(rev.lines[0]?.segs[0].t === 'olleh', 'rev should reverse the line');
+  const ck = run('echo abc | cksum');
+  assert(/\d+\s+3\s+<stdin>/.test(ck.lines[0]?.segs[0].t ?? ''), 'cksum should print crc len name');
+  const sha = run('echo "abc" | shasum');
+  assert(sha.lines[0]?.segs[0].t.startsWith('a9993e364706816aba3e25717850c26c9cd0d89d'), 'shasum of abc must be the FIPS vector');
+  const base = run('basename /a/b/c.js .js');
+  assert(base.lines[0]?.segs[0].t === 'c', 'basename should strip dir + suffix');
+  const rp = run('touch notes2.txt && realpath notes2.txt');
+  assert(rp.lines.some(l => l.segs.some(s => s.t === '/home/user/notes2.txt')), 'realpath should canonicalize');
+});
+
+runTest('RealTerminal', 'macOS commands', 'sw_vers/cal/open/say/mdfind/screencapture', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const sw = run('sw_vers');
+  assert(sw.lines.some(l => l.segs.some(s => s.t.includes('Mac OS X'))), 'sw_vers should print Mac OS X');
+  const cal = run('cal 9 2026');
+  assert(cal.lines.some(l => l.segs.some(s => s.t.includes('September'))), 'cal should name the month');
+  const open = run('touch mac-test.txt && open mac-test.txt');
+  assert(open.events.some(ev => ev.kind === 'preview'), 'open <file> should open the inspector');
+  const say = run('say "hello there"');
+  assert(say.lines.some(l => l.segs.some(s => s.t.includes('hello there'))), 'say should echo the text');
+  const find = run('mdfind .txt');
+  assert(find.lines.length > 0, 'mdfind should print a result summary');
+  run('screencapture snap.png');
+  assert(!!resolvePath(e, 'snap.png'), 'screencapture should create the png');
+  const clip = run('echo "clip me" | pbcopy && pbpaste');
+  assert(clip.lines.some(l => l.segs.some(s => s.t.includes('clip me'))), 'pbcopy/pbpaste round-trip');
+});
+
+runTest('RealTerminal', 'dir stack + /dev/null + prefixes', 'pushd/popd/dirs, 2>/dev/null, time/sudo', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  run('cd project && pushd ~ && dirs && popd');
+  assert(e.cwd === '/home/user/project', 'popd should return to the pushed dir');
+  const devnull = run('ls /definitely-missing 2>/dev/null');
+  assert(!devnull.lines.some(l => l.segs.some(s => s.t.includes('wrote'))), '/dev/null should discard without writing');
+  const timed = run('time seq 5');
+  assert(timed.lines.some(l => l.segs.some(s => s.t.includes('real'))), 'time should print the timing block');
+  const sudo = run('sudo sw_vers');
+  assert(sudo.lines.some(l => l.segs.some(s => s.t.includes('ProductVersion'))), 'sudo should run the wrapped command');
+});
+
+runTest('RealTerminal', 'source + pipeline shasum + pkg managers', 'source script, pipe, yarn/pnpm/pip', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const sourced = run('echo "export FROM_SCRIPT=yes" > s.sh && source s.sh && echo $FROM_SCRIPT');
+  assert(sourced.lines.some(l => l.segs.some(s => s.t === 'yes')), 'source should run the script in this shell');
+  const piped = run('seq 10 | shasum');
+  const pipedLine = piped.lines[0]?.segs.map(s => s.t).join('') ?? '';
+  assert(/^[0-9a-f]{40}  <stdin>$/.test(pipedLine), 'seq | shasum should hash the piped data (got: ' + JSON.stringify(pipedLine) + ')');
+  run('yarn add left-pad');
+  assert(e.packages.some(p => p.name === 'left-pad'), 'yarn add should register the package');
+  run('pnpm install chalk');
+  assert(e.packages.some(p => p.name === 'chalk'), 'pnpm install should register the package');
+  run('pip install requests');
+  assert(e.packages.some(p => p.name === 'requests'), 'pip install should register the package');
+});
+
 // 5. Package Management
 runTest('Package Management', 'npm init, install, run, ls', 'npm workflow', (env) => {
   const res1 = executeCommand('npm init -y', env);

@@ -1,0 +1,22 @@
+{
+  "name": "shellscope-live-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local daemon that runs the REAL shell (zsh) in a PTY and streams observations (fs/git/proc/net) as ShellScope VizEvents over WebSocket.",
+  "scripts": {
+    "live": "tsx src/daemon.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "chokidar": "^4.0.1",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12"
+  }
+}

@@ -23,6 +23,7 @@ import {
   commitDiff, resolveRef, relPath,
 } from './git';
 import type { FileDiff } from './diff';
+import { EXTRA_HANDLERS } from './extraCommands';
 
 export const TTY = 'tty';
 
@@ -119,6 +120,75 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
 
   { name: 'storage', desc: 'manage persistent sandbox storage (status, export, import, clear)', group: 'basics' },
   { name: 'import', desc: 'import external files into virtual filesystem (import <file> or import <url>)', group: 'files' },
+
+  /* ---- full "real terminal" command set ---- */
+  { name: 'unset', desc: 'unset a variable or alias', group: 'proc' },
+  { name: 'printenv', desc: 'print one or all environment variables', group: 'proc' },
+  { name: 'setenv', desc: 'set an environment variable (setenv name value)', group: 'proc' },
+  { name: 'command', desc: 'command -v <cmd> — locate a command', group: 'proc' },
+  { name: 'whereis', desc: 'report the locations of command binaries', group: 'proc' },
+  { name: 'pushd', desc: 'push cwd onto the directory stack and cd', group: 'proc' },
+  { name: 'popd', desc: 'pop the directory stack and cd back', group: 'proc' },
+  { name: 'dirs', desc: 'display the directory stack', group: 'proc' },
+  { name: 'jobs', desc: 'list background jobs (none in the sandbox)', group: 'proc' },
+  { name: 'kill', desc: 'send a signal to a process (simulated)', group: 'proc' },
+  { name: 'top', desc: 'process viewer (one frame)', group: 'proc' },
+  { name: 'lsof', desc: 'list open files & sockets (-i)', group: 'proc' },
+  { name: 'netstat', desc: 'network connections table', group: 'net' },
+  { name: 'ifconfig', desc: 'show network interfaces (en0 / lo0)', group: 'net' },
+  { name: 'sysctl', desc: 'read kernel system parameters', group: 'proc' },
+  { name: 'sw_vers', desc: 'macOS version (ProductName/Version/Build)', group: 'mac' },
+  { name: 'who', desc: 'who is logged on', group: 'mac' },
+  { name: 'w', desc: 'who is logged on and what they are doing', group: 'mac' },
+  { name: 'groups', desc: 'groups the user belongs to', group: 'mac' },
+  { name: 'pbcopy', desc: 'copy stdin/file to the pasteboard', group: 'mac' },
+  { name: 'pbpaste', desc: 'paste the pasteboard to stdout', group: 'mac' },
+  { name: 'open', desc: 'open a file in the inspector or a url (macOS open)', group: 'mac' },
+  { name: 'screencapture', desc: 'capture the screen to a .png file', group: 'mac' },
+  { name: 'say', desc: 'speak text aloud (simulated, Samantha voice)', group: 'mac' },
+  { name: 'mdfind', desc: 'Spotlight full-disk search by name', group: 'mac' },
+  { name: 'mdls', desc: 'show Spotlight metadata for a file', group: 'mac' },
+  { name: 'osascript', desc: 'run AppleScript (display dialog, etc.)', group: 'mac' },
+  { name: 'diskutil', desc: 'manage disk volumes (diskutil list)', group: 'mac' },
+  { name: 'launchctl', desc: 'list launchd agents (launchctl list)', group: 'mac' },
+  { name: 'caffeinate', desc: 'prevent sleep for N seconds (-t N)', group: 'mac' },
+  { name: 'system_profiler', desc: 'hardware overview (SPHardwareDataType)', group: 'mac' },
+  { name: 'basename', desc: 'strip directory and suffix from a name', group: 'files' },
+  { name: 'dirname', desc: 'strip last component from a name', group: 'files' },
+  { name: 'realpath', desc: 'canonicalize a file path', group: 'files' },
+  { name: 'readlink', desc: 'value of a symbolic link', group: 'files' },
+  { name: 'less', desc: 'view a file (like cat, with (END))', group: 'files' },
+  { name: 'more', desc: 'view a file (pager)', group: 'files' },
+  { name: 'file', desc: 'identify file type (MIME-ish)', group: 'files' },
+  { name: 'shasum', desc: 'SHA-1 checksum of a file (real)', group: 'files' },
+  { name: 'sha1sum', desc: 'SHA-1 checksum (GNU flavor)', group: 'files' },
+  { name: 'cksum', desc: 'CRC-32 checksum + length (real)', group: 'files' },
+  { name: 'nl', desc: 'number the lines of text', group: 'files' },
+  { name: 'rev', desc: 'reverse each line', group: 'files' },
+  { name: 'seq', desc: 'print a sequence of numbers', group: 'files' },
+  { name: 'shuf', desc: 'print random unique numbers', group: 'files' },
+  { name: 'base64', desc: 'base64 encode/decode (-d to decode)', group: 'files' },
+  { name: 'xxd', desc: 'hex dump a file (-p for plain)', group: 'files' },
+  { name: 'od', desc: 'octal/char dump (-c)', group: 'files' },
+  { name: 'column', desc: 'format stdin into aligned columns (-t)', group: 'files' },
+  { name: 'fmt', desc: 'reformat paragraphs (-w width)', group: 'files' },
+  { name: 'patch', desc: 'apply a unified diff (patch < f.patch)', group: 'files' },
+  { name: 'nslookup', desc: 'DNS lookup (nslookup example.com)', group: 'net' },
+  { name: 'host', desc: 'DNS lookup (host example.com)', group: 'net' },
+  { name: 'nc', desc: 'netcat — connect/listen (simulated)', group: 'net' },
+  { name: 'netcat', desc: 'netcat (nc alias)', group: 'net' },
+  { name: 'scp', desc: 'secure copy user@host:/path → local', group: 'net' },
+  { name: 'rsync', desc: 'mirror a directory (rsync -av src dst)', group: 'net' },
+  { name: 'yarn', desc: 'Yarn package manager (yarn install pkg)', group: 'npm' },
+  { name: 'pnpm', desc: 'pnpm package manager (pnpm install pkg)', group: 'npm' },
+  { name: 'pip', desc: 'Python package installer (pip install pkg)', group: 'npm' },
+  { name: 'pip3', desc: 'Python 3 package installer', group: 'npm' },
+  { name: 'port', desc: 'MacPorts (port install pkg)', group: 'npm' },
+  { name: 'cal', desc: 'print a calendar (cal [month year])', group: 'mac' },
+  { name: 'time', desc: 'time a command (time <cmd>)', group: 'proc' },
+  { name: 'source', desc: 'run a script file in this shell (source f.sh)', group: 'proc' },
+  { name: 'sudo', desc: 'run a command as root (simulated)', group: 'proc' },
+  { name: 'nohup', desc: 'run a command immune to hangup (simulated)', group: 'proc' },
 ];
 
 export const DEMO_SCRIPT = [
@@ -237,6 +307,10 @@ export function initialEnv(): EnvState {
       la: 'ls -a',
       cls: 'clear',
     },
+    lastExit: 0,
+    clipboard: '',
+    pid: 4200 + Math.floor(Math.random() * 400),
+    pushdStack: [],
   };
 }
 
@@ -284,6 +358,26 @@ function tokenize(s: string): string[] {
   if (quote) flush();
   flush();
   return out;
+}
+
+/** Expand shell variables ($VAR, ${VAR}, $$, $?, $!) and leading ~ into a token. */
+function expandVars(tok: string, env: EnvState): string {
+  let t = tok;
+  // leading tilde  (~/foo  or  ~)
+  if (t.startsWith('~')) {
+    const m = t.match(/^~[^/]*(\/.*)?$/);
+    if (m) t = (env.vars.HOME ?? HOME) + (m[1] ?? '');
+  }
+  // ${VAR} and $VAR (plus specials $$, $?, $!, $-)
+  t = t.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\$\$|\$\?|\$!|\$-/g, (whole, braced, plain) => {
+    if (whole === '$$') return String(env.pid ?? 0);
+    if (whole === '$?') return String(env.lastExit ?? 0);
+    if (whole === '$!') return String((env.pid ?? 0) + 1);
+    if (whole === '$-') return 'e';
+    const name = braced ?? plain ?? '';
+    return env.vars[name] ?? '';
+  });
+  return t;
 }
 
 /** Split a line on top-level separators (quote-aware). */
@@ -406,7 +500,7 @@ class Exec {
 /* Small helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-const rand = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
+export const rand = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 const now = () => new Date().toLocaleTimeString('en-GB', { hour12: false });
 
 /** Extract single-letter flag clusters (-la, -rf…) into a string; keep raw args intact. */
@@ -537,7 +631,7 @@ function gitPayload(env: EnvState, mode: GitPayload['mode'], extra?: Partial<Git
 /* Command handlers                                                    */
 /* ------------------------------------------------------------------ */
 
-type Handler = (x: Exec, args: string[], flags: string) => void;
+export type Handler = (x: Exec, args: string[], flags: string) => void;
 
 const HANDLERS: Record<string, Handler> = {
 
@@ -2068,6 +2162,12 @@ function runProgram(x: Exec, fileArg: string | undefined, runtime: string) {
 function writeRedirect(x: Exec, target: string, append: boolean) {
   const env = x.env;
   const abs = normalize(env.cwd, target);
+  // /dev/null — silently discard
+  if (abs === '/dev/null' || target === '/dev/null') {
+    x.lines = x.lines.filter(l => !(l.segs.length === 1 && x.stdout.split('\n').includes(l.segs[0].t)));
+    x.show(`↳ ${x.stdout.length} byte(s) → /dev/null (discarded)`, 'dim');
+    return;
+  }
   const parent = abs ? parentDir(env, abs) : null;
   if (!abs || !parent) { x.err(`zsh: no such file or directory: ${target}`); return; }
   const existing = resolvePath(env, target);
@@ -2103,14 +2203,34 @@ function simulateUnknown(x: Exec, cmd: string, args: string[]) {
   x.log('proc', `simulated unknown binary '${cmd}'`, '#6ea1ff');
 }
 
+/* merge the full "real terminal" command set */
+Object.assign(HANDLERS, EXTRA_HANDLERS);
+
+/** Copy state mutated by a nested execution back into the current env. */
+function adoptEnv(env: EnvState, other: EnvState): void {
+  env.fs = other.fs;
+  env.cwd = other.cwd;
+  env.git = other.git;
+  env.vars = other.vars;
+  env.aliases = other.aliases;
+  env.packages = other.packages;
+  env.seq = other.seq;
+  env.installedBrew = other.installedBrew;
+  env.clipboard = other.clipboard;
+  env.pushdStack = other.pushdStack;
+  env.lastExit = other.lastExit;
+}
+
 /* ------------------------------------------------------------------ */
 /* Top-level executor                                                  */
 /* ------------------------------------------------------------------ */
 
 const MUTATING_WORDS = [
-  'cd', 'mkdir', 'touch', 'cp', 'mv', 'rm', 'chmod', 'chown', 'ln',
-  'npm', 'curl', 'wget', 'export', 'alias', 'unalias', 'reset', 'clear',
-  'brew', 'omz', 'storage', 'import',
+  'cd', 'mkdir', 'touch', 'cp', 'mv', 'rm', 'chmod', 'chown', 'ln', 'patch', 'rsync',
+  'npm', 'curl', 'wget', 'export', 'alias', 'unalias', 'reset', 'clear', 'unset', 'setenv',
+  'brew', 'omz', 'storage', 'import', 'yarn', 'pnpm', 'pip', 'pip3', 'port',
+  'source', 'pushd', 'popd', 'screencapture', 'scp', 'open', 'pbcopy',
+  'sudo', 'time', 'nohup', 'git',
 ];
 
 function isMutating(cmdLine: string): boolean {
@@ -2144,7 +2264,7 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
     const prePipeCwd = env.cwd;
 
     for (const raw of stagesRaw) {
-      const { tokens, target, append } = extractRedirect(tokenize(raw));
+      const { tokens, target, append } = extractRedirect(tokenize(raw).map(t => expandVars(t, env)));
       if (!tokens.length) continue;
       const stageEnv = isPipe ? { ...env, cwd: prePipeCwd } : env;
       const x = new Exec(stageEnv, stdin);
@@ -2152,13 +2272,52 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       let cmd = tokens[0];
       let rawArgs = tokens.slice(1);
       if (env.aliases[cmd]) {
-        const aliasTokens = tokenize(env.aliases[cmd]);
+        const aliasTokens = tokenize(env.aliases[cmd]).map(t => expandVars(t, env));
         cmd = aliasTokens[0];
         rawArgs = [...aliasTokens.slice(1), ...rawArgs];
       }
+      // prefix utilities: sudo / nohup / nice / env just decorate
+      let prefixGuard = 0;
+      while ((cmd === 'sudo' || cmd === 'nohup' || cmd === 'nice' || cmd === 'env') && rawArgs.length && prefixGuard++ < 4) {
+        if (cmd === 'sudo') x.show('sudo: running with elevated privileges (simulated)', 'dim');
+        if (cmd === 'nohup') x.log('proc', 'nohup: ignoring input and redirecting to nohup.out', '#6ea1ff');
+        if (cmd === 'env' && rawArgs[0].includes('=')) { x.env.vars[rawArgs[0].slice(0, rawArgs[0].indexOf('='))] = rawArgs[0].slice(rawArgs[0].indexOf('=') + 1); }
+        cmd = rawArgs.shift()!;
+      }
       const flags = flagsOf(rawArgs);
 
-      if (cmd === 'clear' || cmd === 'reset') {
+      if (cmd === 'time' && rawArgs.length) {
+        // `time <cmd>` — run the inner command, then print the classic timing block
+        const innerLine = rawArgs.join(' ');
+        const t0 = Date.now();
+        const inner = executeCommand(innerLine, env);
+        adoptEnv(env, inner.env);
+        inner.lines.forEach(l => x.lines.push(l));
+        inner.events.forEach(e => x.events.push(e));
+        const ms = Math.max(1, Date.now() - t0);
+        x.showSegs([
+          { t: 'real\t', c: 'dim' }, { t: `${(ms / 1000 + rand(0, 90) / 1000).toFixed(3)}s`, c: 'fg' },
+          { t: '   user\t', c: 'dim' }, { t: `${(ms * 0.3 / 1000).toFixed(3)}s`, c: 'fg' },
+          { t: '   sys\t', c: 'dim' }, { t: `${(ms * 0.1 / 1000).toFixed(3)}s`, c: 'fg' },
+        ]);
+      } else if (cmd === 'source' || (cmd === '.' && rawArgs.length)) {
+        const targetFile = rawArgs.filter(a => !a.startsWith('-'))[0];
+        const r = targetFile ? resolvePath(x.env, targetFile) : null;
+        if (!r || r.node.type !== 'file') {
+          x.err(`source: ${targetFile}: file not found`);
+        } else {
+          const scriptLines = (r.node.content ?? '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+          for (const line of scriptLines) {
+            const inner = executeCommand(line, env);
+            adoptEnv(env, inner.env);
+            inner.lines.forEach(l => x.lines.push(l));
+            inner.events.forEach(e => x.events.push(e));
+          }
+          x.log('sys', `source ${displayPath(targetFile)} — ${scriptLines.length} command(s) executed`, '#a991f7');
+          x.flash(r.node.id, '#a991f7', 'source', 150);
+        }
+      } else if (cmd === 'clear' || cmd === 'reset') {
+
         clear = true;
         if (cmd === 'reset') {
           const fresh = initialEnv();
@@ -2217,6 +2376,11 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       last = x;
       lastRedirected = !!target;
       lastTarget = target ?? '';
+      // pipe stages run on a shallow clone — sync top-level field writes back
+      env.vars = x.env.vars;
+      env.aliases = x.env.aliases;
+      env.clipboard = x.env.clipboard;
+      env.pushdStack = x.env.pushdStack;
     }
 
     if (isPipe) {
@@ -2224,6 +2388,8 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
     }
 
     if (!last) continue;
+
+    env.lastExit = last.ok ? 0 : 1;
 
     if (stageInfos.length >= 2) {
       last.stage('pipeline', {
