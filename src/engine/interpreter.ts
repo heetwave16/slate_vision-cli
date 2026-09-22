@@ -9,7 +9,7 @@ import {
 } from './fs';
 import type {
   EnvState, ExecResult, FsNode, GitCommit, LogTag, Pkg, StageKind, StagePayload,
-  TermColor, TermLine, TermSeg, VizEvent, PipelineStageInfo,
+  TermColor, TermLine, TermSeg, VizEvent, PipelineStageInfo, GitPayload, DiffFileView,
 } from './types';
 import { FORMULA_REGISTRY, handleBrewCommand } from './brew';
 import { handleOmzCommand } from './omz';
@@ -17,6 +17,13 @@ import {
   getStorageMetadata, clearPersistentStorage, exportStorageSnapshot,
   triggerDownload, importStorageSnapshot, isStorageAvailable,
 } from './storage';
+import {
+  retrack, gitInit, gitAdd, gitCommit, gitStatus, gitDiff, gitLog, gitShow,
+  gitBranchList, gitBranchCreate, gitBranchDelete, gitCheckout, gitPush, gitRm,
+  commitDiff, resolveRef, relPath,
+} from './git';
+import type { FileDiff } from './diff';
+import { EXTRA_HANDLERS } from './extraCommands';
 
 export const TTY = 'tty';
 
@@ -61,12 +68,16 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
   { name: 'du', desc: 'estimate file space usage', group: 'files' },
 
   { name: 'git init', desc: 'initialize a repository', group: 'git' },
-  { name: 'git add', desc: 'stage files (git add .)', group: 'git' },
-  { name: 'git commit', desc: 'commit staged (git commit -m "msg")', group: 'git' },
-  { name: 'git status', desc: 'show working tree state', group: 'git' },
-  { name: 'git log', desc: 'show commit history', group: 'git' },
-  { name: 'git branch', desc: 'list or create branches', group: 'git' },
-  { name: 'git diff', desc: 'show changes between commits / working tree', group: 'git' },
+  { name: 'git add', desc: 'stage files (git add .) — snapshots real content', group: 'git' },
+  { name: 'git commit', desc: 'commit staged (git commit -m "msg") — real hashes', group: 'git' },
+  { name: 'git status', desc: 'show working tree state (real content compare)', group: 'git' },
+  { name: 'git log', desc: 'show commit history [-p patches, --oneline]', group: 'git' },
+  { name: 'git diff', desc: 'real diffs: worktree | --staged | <ref> | <a>..<b>', group: 'git' },
+  { name: 'git branch', desc: 'list / create / delete branches', group: 'git' },
+  { name: 'git checkout', desc: 'switch branch — syncs working tree for real', group: 'git' },
+  { name: 'git show', desc: 'show commit with its real patch', group: 'git' },
+  { name: 'git push', desc: 'sync to (simulated) remote origin', group: 'git' },
+  { name: 'git rm', desc: 'remove a file from the repository', group: 'git' },
 
   { name: 'npm init', desc: 'create package.json (npm init -y)', group: 'npm' },
   { name: 'npm install', desc: 'resolve + install packages', group: 'npm' },
@@ -109,20 +120,93 @@ export const COMMANDS: { name: string; desc: string; group: string }[] = [
 
   { name: 'storage', desc: 'manage persistent sandbox storage (status, export, import, clear)', group: 'basics' },
   { name: 'import', desc: 'import external files into virtual filesystem (import <file> or import <url>)', group: 'files' },
+
+  /* ---- full "real terminal" command set ---- */
+  { name: 'unset', desc: 'unset a variable or alias', group: 'proc' },
+  { name: 'printenv', desc: 'print one or all environment variables', group: 'proc' },
+  { name: 'setenv', desc: 'set an environment variable (setenv name value)', group: 'proc' },
+  { name: 'command', desc: 'command -v <cmd> — locate a command', group: 'proc' },
+  { name: 'whereis', desc: 'report the locations of command binaries', group: 'proc' },
+  { name: 'pushd', desc: 'push cwd onto the directory stack and cd', group: 'proc' },
+  { name: 'popd', desc: 'pop the directory stack and cd back', group: 'proc' },
+  { name: 'dirs', desc: 'display the directory stack', group: 'proc' },
+  { name: 'jobs', desc: 'list background jobs (none in the sandbox)', group: 'proc' },
+  { name: 'kill', desc: 'send a signal to a process (simulated)', group: 'proc' },
+  { name: 'top', desc: 'process viewer (one frame)', group: 'proc' },
+  { name: 'lsof', desc: 'list open files & sockets (-i)', group: 'proc' },
+  { name: 'netstat', desc: 'network connections table', group: 'net' },
+  { name: 'ifconfig', desc: 'show network interfaces (en0 / lo0)', group: 'net' },
+  { name: 'sysctl', desc: 'read kernel system parameters', group: 'proc' },
+  { name: 'sw_vers', desc: 'macOS version (ProductName/Version/Build)', group: 'mac' },
+  { name: 'who', desc: 'who is logged on', group: 'mac' },
+  { name: 'w', desc: 'who is logged on and what they are doing', group: 'mac' },
+  { name: 'groups', desc: 'groups the user belongs to', group: 'mac' },
+  { name: 'pbcopy', desc: 'copy stdin/file to the pasteboard', group: 'mac' },
+  { name: 'pbpaste', desc: 'paste the pasteboard to stdout', group: 'mac' },
+  { name: 'open', desc: 'open a file in the inspector or a url (macOS open)', group: 'mac' },
+  { name: 'screencapture', desc: 'capture the screen to a .png file', group: 'mac' },
+  { name: 'say', desc: 'speak text aloud (simulated, Samantha voice)', group: 'mac' },
+  { name: 'mdfind', desc: 'Spotlight full-disk search by name', group: 'mac' },
+  { name: 'mdls', desc: 'show Spotlight metadata for a file', group: 'mac' },
+  { name: 'osascript', desc: 'run AppleScript (display dialog, etc.)', group: 'mac' },
+  { name: 'diskutil', desc: 'manage disk volumes (diskutil list)', group: 'mac' },
+  { name: 'launchctl', desc: 'list launchd agents (launchctl list)', group: 'mac' },
+  { name: 'caffeinate', desc: 'prevent sleep for N seconds (-t N)', group: 'mac' },
+  { name: 'system_profiler', desc: 'hardware overview (SPHardwareDataType)', group: 'mac' },
+  { name: 'basename', desc: 'strip directory and suffix from a name', group: 'files' },
+  { name: 'dirname', desc: 'strip last component from a name', group: 'files' },
+  { name: 'realpath', desc: 'canonicalize a file path', group: 'files' },
+  { name: 'readlink', desc: 'value of a symbolic link', group: 'files' },
+  { name: 'less', desc: 'view a file (like cat, with (END))', group: 'files' },
+  { name: 'more', desc: 'view a file (pager)', group: 'files' },
+  { name: 'file', desc: 'identify file type (MIME-ish)', group: 'files' },
+  { name: 'shasum', desc: 'SHA-1 checksum of a file (real)', group: 'files' },
+  { name: 'sha1sum', desc: 'SHA-1 checksum (GNU flavor)', group: 'files' },
+  { name: 'cksum', desc: 'CRC-32 checksum + length (real)', group: 'files' },
+  { name: 'nl', desc: 'number the lines of text', group: 'files' },
+  { name: 'rev', desc: 'reverse each line', group: 'files' },
+  { name: 'seq', desc: 'print a sequence of numbers', group: 'files' },
+  { name: 'shuf', desc: 'print random unique numbers', group: 'files' },
+  { name: 'base64', desc: 'base64 encode/decode (-d to decode)', group: 'files' },
+  { name: 'xxd', desc: 'hex dump a file (-p for plain)', group: 'files' },
+  { name: 'od', desc: 'octal/char dump (-c)', group: 'files' },
+  { name: 'column', desc: 'format stdin into aligned columns (-t)', group: 'files' },
+  { name: 'fmt', desc: 'reformat paragraphs (-w width)', group: 'files' },
+  { name: 'patch', desc: 'apply a unified diff (patch < f.patch)', group: 'files' },
+  { name: 'nslookup', desc: 'DNS lookup (nslookup example.com)', group: 'net' },
+  { name: 'host', desc: 'DNS lookup (host example.com)', group: 'net' },
+  { name: 'nc', desc: 'netcat — connect/listen (simulated)', group: 'net' },
+  { name: 'netcat', desc: 'netcat (nc alias)', group: 'net' },
+  { name: 'scp', desc: 'secure copy user@host:/path → local', group: 'net' },
+  { name: 'rsync', desc: 'mirror a directory (rsync -av src dst)', group: 'net' },
+  { name: 'yarn', desc: 'Yarn package manager (yarn install pkg)', group: 'npm' },
+  { name: 'pnpm', desc: 'pnpm package manager (pnpm install pkg)', group: 'npm' },
+  { name: 'pip', desc: 'Python package installer (pip install pkg)', group: 'npm' },
+  { name: 'pip3', desc: 'Python 3 package installer', group: 'npm' },
+  { name: 'port', desc: 'MacPorts (port install pkg)', group: 'npm' },
+  { name: 'cal', desc: 'print a calendar (cal [month year])', group: 'mac' },
+  { name: 'time', desc: 'time a command (time <cmd>)', group: 'proc' },
+  { name: 'source', desc: 'run a script file in this shell (source f.sh)', group: 'proc' },
+  { name: 'sudo', desc: 'run a command as root (simulated)', group: 'proc' },
+  { name: 'nohup', desc: 'run a command immune to hangup (simulated)', group: 'proc' },
 ];
 
 export const DEMO_SCRIPT = [
   'cd project',
-  'ls -la',
-  'mkdir -p src/components',
-  'echo "export const Button = ({ label }) => <button>{label}</button>" > src/components/Button.jsx',
   'git init',
+  'echo "node_modules" > .gitignore',
   'git add .',
-  'git commit -m "feat: scaffold button component"',
+  'git commit -m "chore: initial commit"',
   'npm install framer-motion',
-  'curl -o public/hero.svg https://cdn.sandbox.dev/hero.svg',
-  'cat README.md',
-  'node src/index.js',
+  'git branch feature/ui',
+  'git checkout feature/ui',
+  'echo "export const slugify = (s) => s.toLowerCase().trim();" > src/slug.js',
+  'git add .',
+  'git diff --staged',
+  'git commit -m "feat: add slugify helper"',
+  'git checkout main',
+  'git log --oneline',
+  'git branch',
   'tree',
 ];
 
@@ -193,7 +277,18 @@ export function initialEnv(): EnvState {
   return {
     fs,
     cwd: HOME,
-    git: { init: false, root: '', branch: 'main', staged: [], dirty: [], commits: [] },
+    git: {
+      init: false,
+      root: '',
+      branch: 'main',
+      branches: {},
+      commits: {},
+      order: [],
+      index: {},
+      headHash: null,
+      staged: [],
+      dirty: [],
+    },
     packages: [],
     seq,
     user: 'dev',
@@ -212,6 +307,10 @@ export function initialEnv(): EnvState {
       la: 'ls -a',
       cls: 'clear',
     },
+    lastExit: 0,
+    clipboard: '',
+    pid: 4200 + Math.floor(Math.random() * 400),
+    pushdStack: [],
   };
 }
 
@@ -259,6 +358,26 @@ function tokenize(s: string): string[] {
   if (quote) flush();
   flush();
   return out;
+}
+
+/** Expand shell variables ($VAR, ${VAR}, $$, $?, $!) and leading ~ into a token. */
+function expandVars(tok: string, env: EnvState): string {
+  let t = tok;
+  // leading tilde  (~/foo  or  ~)
+  if (t.startsWith('~')) {
+    const m = t.match(/^~[^/]*(\/.*)?$/);
+    if (m) t = (env.vars.HOME ?? HOME) + (m[1] ?? '');
+  }
+  // ${VAR} and $VAR (plus specials $$, $?, $!, $-)
+  t = t.replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)|\$\$|\$\?|\$!|\$-/g, (whole, braced, plain) => {
+    if (whole === '$$') return String(env.pid ?? 0);
+    if (whole === '$?') return String(env.lastExit ?? 0);
+    if (whole === '$!') return String((env.pid ?? 0) + 1);
+    if (whole === '$-') return 'e';
+    const name = braced ?? plain ?? '';
+    return env.vars[name] ?? '';
+  });
+  return t;
 }
 
 /** Split a line on top-level separators (quote-aware). */
@@ -323,9 +442,9 @@ class Exec {
 
   get stdout(): string { return this.stdoutBuf.join('\n'); }
 
-  /** Absorb output produced out-of-band (e.g. by a brew formula) into the capturable stdout buffer. */
-  absorbStdout(text: string) {
-    if (text) this.stdoutBuf.push(text);
+  /** Replace captured stdout (used by brew formula execution inside pipes). */
+  setStdout(s: string) {
+    this.stdoutBuf = s ? s.split('\n') : [];
   }
 
   out(text: string, c?: TermColor, b?: boolean) {
@@ -368,15 +487,12 @@ class Exec {
     this.events.push({ kind: 'highlight', ids, color, duration, delay });
   }
 
-  markDirty(absPath: string) {
-    const g = this.env.git;
-    if (!g.init || !absPath.startsWith(g.root)) return;
-    if (!g.dirty.includes(absPath) && !g.staged.includes(absPath)) g.dirty.push(absPath);
+  /** fs changed → recompute git staged/dirty from REAL content comparison */
+  markDirty(_absPath: string) {
+    if (this.env.git.init) retrack(this.env);
   }
-  untrack(absPath: string) {
-    const g = this.env.git;
-    g.staged = g.staged.filter(p => p !== absPath);
-    if (g.init && absPath.startsWith(g.root) && !g.dirty.includes(absPath)) g.dirty.push(absPath);
+  untrack(_absPath: string) {
+    if (this.env.git.init) retrack(this.env);
   }
 }
 
@@ -384,8 +500,7 @@ class Exec {
 /* Small helpers                                                       */
 /* ------------------------------------------------------------------ */
 
-const rand = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
-const hash7 = () => Array.from({ length: 7 }, () => '0123456789abcdef'[rand(0, 15)]).join('');
+export const rand = (lo: number, hi: number) => Math.round(lo + Math.random() * (hi - lo));
 const now = () => new Date().toLocaleTimeString('en-GB', { hour12: false });
 
 /** Extract single-letter flag clusters (-la, -rf…) into a string; keep raw args intact. */
@@ -433,10 +548,90 @@ function fakeBody(path: string, host: string): string {
 }
 
 /* ------------------------------------------------------------------ */
+/* Git presentation helpers                                            */
+/* ------------------------------------------------------------------ */
+
+const short = (h: string | null | undefined) => (h ? h.slice(0, 7) : '');
+
+/** abs path → FsNode index of the whole virtual fs (for flashing nodes) */
+function nodeIndex(env: EnvState): Map<string, FsNode> {
+  const m = new Map<string, FsNode>();
+  const walk = (n: FsNode, p: string) => {
+    m.set(p, n);
+    for (const c of n.children ?? []) walk(c, p + '/' + c.name);
+  };
+  walk(env.fs, HOME);
+  return m;
+}
+
+/** Render one FileDiff as unified-diff terminal lines (colored). */
+function pushUnified(x: Exec, f: FileDiff) {
+  x.outSegs([{ t: `diff --git a/${f.path} b/${f.path}`, c: 'dim' }]);
+  if (f.status === 'added') x.show('new file mode 100644', 'dim');
+  if (f.status === 'deleted') x.show('deleted file mode 100644', 'dim');
+  x.outSegs([{ t: `--- ${f.status === 'added' ? '/dev/null' : 'a/' + f.path}`, c: 'dim' }]);
+  x.outSegs([{ t: `+++ ${f.status === 'deleted' ? '/dev/null' : 'b/' + f.path}`, c: 'dim' }]);
+  for (const h of f.hunks) {
+    x.outSegs([{ t: h.header, c: 'cyan' }]);
+    for (const l of h.lines) {
+      x.outSegs([{
+        t: (l.type === 'add' ? '+' : l.type === 'del' ? '-' : ' ') + l.text,
+        c: l.type === 'add' ? 'green' : l.type === 'del' ? 'rose' : 'dim',
+      }]);
+    }
+  }
+}
+
+function toDiffFileViews(files: FileDiff[]): DiffFileView[] {
+  return files.map(f => ({
+    path: f.path,
+    status: f.status,
+    add: f.add,
+    del: f.del,
+    hunks: f.hunks.map(h => ({
+      header: h.header,
+      lines: h.lines.map(l => ({ t: l.text, c: l.type })),
+    })),
+  }));
+}
+
+function diffStatsFromCommit(c: GitCommit): string {
+  const add = c.stats.reduce((a, s) => a + s.add, 0);
+  const del = c.stats.reduce((a, s) => a + s.del, 0);
+  const parts = [`${c.files.length} file${c.files.length === 1 ? '' : 's'} changed`];
+  if (add) parts.push(`${add} insertion${add === 1 ? '' : 's'}(+)`);
+  if (del) parts.push(`${del} deletion${del === 1 ? '' : 's'}(-)`);
+  return parts.join(', ');
+}
+
+function diffSummaryOfFiles(files: FileDiff[]): string {
+  const add = files.reduce((a, f) => a + f.add, 0);
+  const del = files.reduce((a, f) => a + f.del, 0);
+  const parts = [`${files.length} file${files.length === 1 ? '' : 's'} changed`];
+  if (add) parts.push(`${add} insertion${add === 1 ? '' : 's'}(+)`);
+  if (del) parts.push(`${del} deletion${del === 1 ? '' : 's'}(-)`);
+  return parts.join(', ');
+}
+
+/** Build the rich GitPayload for the stage overlay from real engine state. */
+function gitPayload(env: EnvState, mode: GitPayload['mode'], extra?: Partial<GitPayload>): GitPayload {
+  const g = env.git;
+  return {
+    mode,
+    root: displayPath(g.root),
+    branch: g.branch,
+    files: g.staged.map(p => relPath(g.root, p)),
+    commits: gitLog(env).map(c => ({ hash: c.hash, msg: c.msg, files: c.files, stats: c.stats })),
+    branches: gitBranchList(env),
+    ...extra,
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Command handlers                                                    */
 /* ------------------------------------------------------------------ */
 
-type Handler = (x: Exec, args: string[], flags: string) => void;
+export type Handler = (x: Exec, args: string[], flags: string) => void;
 
 const HANDLERS: Record<string, Handler> = {
 
@@ -798,23 +993,23 @@ const HANDLERS: Record<string, Handler> = {
     x.log('proc', `sleep ${n}s`, '#6ea1ff');
   },
 
-  /* ---------------- git ---------------- */
+  /* ---------------- git (REAL engine: content snapshots, SHA-1, LCS diffs) ---------------- */
 
   git: (x, args) => {
     const sub = args[0];
     const g = x.env.git;
+    const rel = (p: string) => relPath(g.root, p);
 
     if (sub === 'init') {
-      if (g.init) { x.err(`fatal: already a git repository at ${displayPath(g.root)}`); return; }
-      x.env.git = { init: true, root: x.env.cwd, branch: 'main', staged: [], dirty: [], commits: [] };
+      const res = gitInit(x.env);
+      if (!res.ok) { x.err(res.error!); return; }
       const cwdNode = resolvePath(x.env, '.');
       if (cwdNode) {
-        walkFiles(cwdNode.node, x.env.cwd, (_f, p) => { if (!p.includes('/.git/')) x.env.git.dirty.push(p); });
         const dotgit = makeDir(x.env, '.git');
         cwdNode.node.children!.push(dotgit);
         x.flash(dotgit.id, '#f2708a', '+ .git', 250);
       }
-      x.stage('git', { mode: 'init', root: displayPath(x.env.cwd), branch: 'main', files: [], commits: [] }, 4200);
+      x.stage('git', gitPayload(x.env, 'init'), 4200);
       x.showSegs([{ t: 'Initialized empty Git repository in ', c: 'fg' }, { t: displayPath(x.env.cwd) + '/.git', c: 'rose' }]);
       x.log('git', `init @ ${displayPath(x.env.cwd)}`, '#f2708a');
       return;
@@ -823,120 +1018,315 @@ const HANDLERS: Record<string, Handler> = {
     if (!g.init) { x.err('fatal: not a git repository (run: git init)'); return; }
 
     if (sub === 'status') {
-      x.outSegs([{ t: 'On branch ', c: 'fg' }, { t: g.branch, c: 'cyan', b: true }]);
-      if (g.staged.length) {
+      const st = gitStatus(x.env);
+      x.outSegs([{ t: 'On branch ', c: 'fg' }, { t: st.branch, c: 'cyan', b: true }]);
+      if (!st.head) x.show('  (no commits yet — stage files and commit)', 'dim');
+      if (st.staged.length) {
         x.show('Changes to be committed:', 'green', true);
-        g.staged.forEach(p => x.outSegs([{ t: '  new file:   ', c: 'green' }, { t: displayPath(p), c: 'fg' }]));
+        st.staged.forEach(e => x.outSegs([
+          { t: `  ${e.kind === 'new' ? 'new file:' : e.kind === 'deleted' ? 'deleted: ' : 'modified:'}`, c: 'green' },
+          { t: `   ${rel(e.path)}`, c: 'fg' },
+        ]));
       }
-      if (g.dirty.length) {
+      if (st.unstaged.length) {
         x.show('Changes not staged for commit:', 'rose', true);
-        g.dirty.forEach(p => x.outSegs([{ t: '  modified:   ', c: 'rose' }, { t: displayPath(p), c: 'fg' }]));
+        st.unstaged.forEach(e => x.outSegs([
+          { t: `  ${e.kind === 'deleted' ? 'deleted:' : 'modified:'}`, c: 'rose' },
+          { t: `   ${rel(e.path)}`, c: 'fg' },
+        ]));
       }
-      if (!g.staged.length && !g.dirty.length) x.show('nothing to commit, working tree clean', 'ok');
+      if (st.untracked.length) {
+        x.show('Untracked files:', 'amber', true);
+        st.untracked.forEach(p => x.outSegs([{ t: '  ', c: 'dim' }, { t: rel(p), c: 'fg' }]));
+      }
+      if (st.clean) x.show('nothing to commit, working tree clean', 'ok');
       return;
     }
 
     if (sub === 'add') {
       const target = nonFlags(args.slice(1))[0] ?? '.';
-      const abs = normalize(x.env.cwd, target);
-      const matched = g.dirty.filter(p =>
-        target === '.' || p === abs || (abs !== null && p.startsWith(abs + '/')) || p.endsWith('/' + target));
-      if (!matched.length) { x.err(`error: pathspec '${target}' did not match any modified/untracked files`); return; }
-      g.dirty = g.dirty.filter(p => !matched.includes(p));
-      g.staged.push(...matched);
-      const cwdNode = resolvePath(x.env, '.');
-      matched.forEach((p, i) => {
-        x.log('git', `stage ${displayPath(p)}`, '#f2708a', i * 90);
-        void p;
+      const res = gitAdd(x.env, target);
+      if (!res.ok) { x.err(res.error!); return; }
+      const byPath = nodeIndex(x.env);
+      res.paths.forEach((p, i) => {
+        const n = byPath.get(p);
+        if (n) x.flash(n.id, '#f2708a', 'staged', 150 + Math.min(i, 6) * 130);
       });
-      if (cwdNode) {
-        // flash staged files in the tree
-        const byPath = new Map<string, FsNode>();
-        const collect = (n: FsNode, path: string) => {
-          for (const c of n.children ?? []) {
-            const cp = path + '/' + c.name;
-            if (c.type === 'file') byPath.set(cp, c); else collect(c, cp);
-          }
-        };
-        collect(x.env.fs, HOME);
-        matched.forEach((p, i) => {
-          const node = byPath.get(p);
-          if (node) x.flash(node.id, '#f2708a', 'staged', 150 + i * 130);
-        });
-      }
-      x.stage('git', {
-        mode: 'add', branch: g.branch, commits: g.commits,
-        files: g.staged.map(displayPath),
-      }, 4800);
-      x.showSegs([{ t: `staged ${matched.length} file${matched.length === 1 ? '' : 's'}`, c: 'rose' }, { t: ' → ready to commit', c: 'dim' }]);
+      x.stage('git', gitPayload(x.env, 'add'), 4800);
+      x.showSegs([
+        { t: `staged ${res.paths.length} file${res.paths.length === 1 ? '' : 's'}`, c: 'rose' },
+        { t: ' → ready to commit', c: 'dim' },
+      ]);
+      x.log('git', `stage ${res.paths.length} file${res.paths.length === 1 ? '' : 's'}`, '#f2708a');
       return;
     }
 
     if (sub === 'commit') {
       const mi = args.indexOf('-m');
       const msg = mi >= 0 ? args.slice(mi + 1).join(' ') : '';
-      if (!g.staged.length) { x.err('nothing to commit (use git add first)'); return; }
       if (!msg) { x.err('error: commit message required (git commit -m "msg")'); return; }
-      const commit: GitCommit = { hash: hash7(), msg, files: [...g.staged], at: Date.now() };
-      g.commits.push(commit);
-      g.dirty = g.dirty.filter(p => !commit.files.includes(p));
-      g.staged = [];
+      const res = gitCommit(x.env, msg);
+      if (!res.ok) { x.err(res.error!); return; }
+      const c = res.commit!;
       x.stage('git', {
-        mode: 'commit', branch: g.branch, commits: g.commits,
-        files: commit.files.map(displayPath), commit,
-      }, 6000);
-      x.outSegs([{ t: `[${g.branch} `, c: 'fg' }, { t: commit.hash, c: 'amber', b: true }, { t: `] `, c: 'fg' }, { t: msg, c: 'fg' }]);
-      x.show(` ${commit.files.length} file${commit.files.length === 1 ? '' : 's'} changed`, 'dim');
-      x.log('git', `commit ${commit.hash} — "${msg}"`, '#f5b454');
+        ...gitPayload(x.env, 'commit'),
+        commit: { hash: c.hash, msg: c.msg, files: c.files, stats: c.stats },
+        diffFiles: toDiffFileViews(commitDiff(x.env, c.hash)),
+      }, 6400);
+      x.outSegs([
+        { t: `[${g.branch} `, c: 'fg' },
+        { t: c.hash.slice(0, 7), c: 'amber', b: true },
+        { t: `] `, c: 'fg' },
+        { t: msg, c: 'fg' },
+      ]);
+      x.show(` ${diffStatsFromCommit(c)}`, 'dim');
+      const byPath = nodeIndex(x.env);
+      c.files.forEach((f, i) => {
+        const abs = g.root + '/' + f;
+        const n = byPath.get(abs);
+        if (n) x.flash(n.id, '#f5b454', 'committed', 250 + Math.min(i, 6) * 150);
+      });
+      x.log('git', `commit ${c.hash.slice(0, 7)} — "${msg}"`, '#f5b454');
       return;
     }
 
     if (sub === 'log') {
-      if (!g.commits.length) { x.err('fatal: your current branch has no commits yet'); return; }
-      [...g.commits].reverse().forEach(c => {
-        x.outSegs([
-          { t: 'commit ', c: 'fg' }, { t: c.hash, c: 'amber', b: true },
-          { t: ` (HEAD -> ${g.branch})`, c: 'cyan' },
-        ]);
-        x.out(`Author: ${x.env.user}@${x.env.host}`, 'dim');
+      const patch = args.includes('-p') || args.includes('--patch');
+      const oneline = args.includes('--oneline');
+      const commits = gitLog(x.env);
+      if (!commits.length) { x.err('fatal: your current branch has no commits yet'); return; }
+      commits.forEach(c => {
+        const tags: string[] = [];
+        if (c.hash === g.headHash) tags.push(`HEAD -> ${g.branch}`);
+        for (const b of gitBranchList(x.env)) {
+          if (b.hash === c.hash && b.name !== g.branch && !b.name.startsWith('origin/')) tags.push(b.name);
+        }
+        if (oneline) {
+          x.outSegs([
+            { t: c.hash.slice(0, 7), c: 'amber', b: true },
+            { t: ' ', c: 'dim' },
+            { t: c.msg, c: 'fg' },
+          ]);
+          return;
+        }
+        const logSegs: TermSeg[] = [
+          { t: 'commit ', c: 'fg' },
+          { t: c.hash, c: 'amber', b: true },
+        ];
+        if (tags.length) logSegs.push({ t: ` (${tags.join(', ')})`, c: 'cyan' });
+        x.outSegs(logSegs);
+        x.out(`Author: ${c.author}`, 'dim');
         x.out(`Date:   ${new Date(c.at).toUTCString()}`, 'dim');
-        x.out(`    ${c.msg}`, 'fg');
         x.out('', 'dim');
+        c.msg.split('\n').forEach(l => x.out(`    ${l}`, 'fg'));
+        x.out('', 'dim');
+        if (patch) commitDiff(x.env, c.hash).forEach(f => pushUnified(x, f));
       });
-      return;
-    }
-
-    if (sub === 'branch') {
-      const bName = args.filter(a => !a.startsWith('-'))[1];
-      if (bName) {
-        g.branch = bName;
-        x.show(`Switched to branch '${bName}'`, 'ok');
-        x.log('git', `checkout -b ${bName}`);
-      } else {
-        x.outSegs([{ t: '* ', c: 'green' }, { t: g.branch, c: 'green', b: true }]);
-        if (g.branch !== 'main') x.out('  main', 'dim');
-      }
+      x.log('git', `log — ${commits.length} commit${commits.length === 1 ? '' : 's'} on ${g.branch}`);
       return;
     }
 
     if (sub === 'diff') {
-      if (!g.dirty.length && !g.staged.length) {
-        x.show('No changes detected in working tree', 'dim');
+      const rest = args.slice(1).filter(a => !a.startsWith('-'));
+      const staged = args.includes('--staged') || args.includes('--cached');
+      let file: string | undefined;
+      let ref: string | undefined;
+      let refA: string | undefined;
+      let refB: string | undefined;
+      if (rest.length >= 2 && resolveRef(x.env, rest[0]) && resolveRef(x.env, rest[1])) {
+        refA = rest[0]; refB = rest[1];
+      } else if (rest.length >= 2 && resolveRef(x.env, rest[0])) {
+        ref = rest[0]; file = rest[1];       // git diff <ref> <path>
+      } else if (rest.length === 1) {
+        if (resolveRef(x.env, rest[0])) ref = rest[0];
+        else file = rest[0];
+      } else if (rest.length >= 2) {
+        file = rest[0];
+      }
+      let d;
+      try {
+        d = gitDiff(x.env, { staged, file, ref, refA, refB });
+      } catch (err) {
+        x.err((err as Error).message);
         return;
       }
-      const files = [...new Set([...g.dirty, ...g.staged])];
-      files.forEach(f => {
-        const rel = displayPath(f);
-        x.outSegs([{ t: `diff --git a/${rel} b/${rel}`, c: 'dim' }]);
-        x.outSegs([{ t: `--- a/${rel}`, c: 'dim' }]);
-        x.outSegs([{ t: `+++ b/${rel}`, c: 'dim' }]);
-        x.outSegs([{ t: '@@ -1,3 +1,4 @@', c: 'cyan' }]);
-        x.outSegs([{ t: '+ // modified in working tree', c: 'green' }]);
+      if (!d.files.length) {
+        x.show(`No differences found (${d.label})`, 'dim');
+        x.log('git', `diff ${d.label} — clean`);
+        return;
+      }
+      d.files.forEach(f => pushUnified(x, f));
+      x.showSegs([{ t: `  ↳ ${d.summary}`, c: 'ok' }]);
+      x.stage('git', {
+        ...gitPayload(x.env, 'diff'),
+        files: d.files.map(f => f.path),
+        diffFiles: toDiffFileViews(d.files),
+        diffLabel: d.label,
+      }, 6200);
+      x.log('git', `diff ${d.label} — ${d.summary}`, '#f5b454');
+      return;
+    }
+
+    if (sub === 'branch') {
+      const del = args.includes('-d') || args.includes('-D');
+      const rest = args.slice(1).filter(a => !a.startsWith('-'));
+      if (del) {
+        const name = rest[0] ?? '';
+        const was = g.branches[name];
+        const res = gitBranchDelete(x.env, name);
+        if (!res.ok) { x.err(res.error!); return; }
+        x.outSegs([
+          { t: 'Deleted branch ', c: 'fg' },
+          { t: name, c: 'rose', b: true },
+          { t: was ? ` (was ${was.slice(0, 7)})` : '', c: 'dim' },
+        ]);
+        x.stage('git', gitPayload(x.env, 'branch'), 3600);
+        x.log('git', `branch -d ${name}`);
+        return;
+      }
+      if (rest[0]) {
+        const res = gitBranchCreate(x.env, rest[0]);
+        if (!res.ok) { x.err(res.error!); return; }
+        x.outSegs([
+          { t: "branch '", c: 'fg' },
+          { t: rest[0], c: 'cyan', b: true },
+          { t: `' created at `, c: 'fg' },
+          { t: (g.headHash ?? '').slice(0, 7), c: 'amber' },
+          { t: ` — switch with `, c: 'dim' },
+          { t: `git checkout ${rest[0]}`, c: 'ok' },
+        ]);
+        x.stage('git', gitPayload(x.env, 'branch'), 3800);
+        x.log('git', `branch ${rest[0]} @ ${short(g.headHash)}`);
+        return;
+      }
+      const branches = gitBranchList(x.env);
+      if (!branches.some(b => b.hash)) x.show('(no branches yet — make a commit first)', 'dim');
+      branches.forEach(b => {
+        const segs: TermSeg[] = [
+          { t: b.current ? '* ' : '  ', c: b.current ? 'green' : 'dim' },
+          { t: b.name, c: b.current ? 'green' : b.name.startsWith('origin/') ? 'info' : 'fg', b: b.current },
+          { t: `  ${b.hash ? b.hash.slice(0, 7) : '(unborn)'}`, c: 'dim' },
+        ];
+        if (b.name.startsWith('origin/')) segs.push({ t: '  (remote)', c: 'dim' });
+        x.outSegs(segs);
       });
       return;
     }
 
-    x.err(`git: '${sub}' is not a git command — try: init, add, commit, status, log, branch, diff`);
+    if (sub === 'checkout' || sub === 'switch') {
+      const create = args.includes('-b') || args.includes('-c');
+      const target = nonFlags(args.slice(1))[0];
+      if (!target) {
+        x.show(`On branch ${g.branch}${g.headHash ? ` @ ${short(g.headHash)}` : ' (no commits yet)'}`, 'dim');
+        return;
+      }
+      const res = gitCheckout(x.env, target, { create });
+      if (!res.ok) { x.err(res.error!); return; }
+      const changes = res.changes ?? [];
+      const byPath = nodeIndex(x.env);
+      changes.forEach((ch, i) => {
+        const color = ch.action === 'added' ? '#3fdc9b' : ch.action === 'deleted' ? '#f2708a' : '#f5b454';
+        const label = ch.action === 'added' ? '+ added' : ch.action === 'deleted' ? 'deleted' : 'synced';
+        const n = byPath.get(ch.path);
+        if (n) x.flash(n.id, color, label, 250 + Math.min(i, 6) * 160);
+      });
+      if (changes.length) {
+        const first = byPath.get(changes[0].path);
+        x.packet(TTY, first?.id ?? x.env.fs.id, '#53c7f0', 'switch', 120);
+      }
+      const checkSegs: TermSeg[] = [
+        { t: res.created ? 'Switched to a new branch ' : 'Switched to branch ', c: 'ok' },
+        { t: `'${target}'`, c: 'cyan', b: true },
+      ];
+      checkSegs.push(changes.length
+        ? { t: ` — ${changes.length} file${changes.length === 1 ? '' : 's'} synced to worktree`, c: 'dim' }
+        : { t: ' (up to date)', c: 'dim' });
+      x.outSegs(checkSegs);
+      x.stage('git', {
+        ...gitPayload(x.env, 'checkout'),
+        files: changes.map(c => rel(c.path)),
+        changedFiles: changes.map(c => ({ path: rel(c.path), action: c.action })),
+      }, 5800);
+      x.log('git', `checkout ${target}${changes.length ? ` (${changes.length} files synced)` : ''}`, '#53c7f0');
+      return;
+    }
+
+    if (sub === 'show') {
+      const ref = nonFlags(args.slice(1))[0] ?? 'HEAD';
+      const res = gitShow(x.env, ref);
+      if ('error' in res) { x.err(res.error); return; }
+      const c = res.commit;
+      x.outSegs([
+        { t: 'commit ', c: 'fg' },
+        { t: c.hash, c: 'amber', b: true },
+        { t: ` (${c.hash.slice(0, 7)})`, c: 'cyan' },
+      ]);
+      x.out(`Author: ${c.author}`, 'dim');
+      x.out(`Date:   ${new Date(c.at).toUTCString()}`, 'dim');
+      x.out('', 'dim');
+      c.msg.split('\n').forEach(l => x.out(`    ${l}`, 'fg'));
+      x.out('', 'dim');
+      res.files.forEach(f => pushUnified(x, f));
+      if (res.files.length) x.showSegs([{ t: `  ↳ ${diffSummaryOfFiles(res.files)}`, c: 'ok' }]);
+      x.stage('git', {
+        ...gitPayload(x.env, 'diff'),
+        diffFiles: toDiffFileViews(res.files),
+        diffLabel: c.hash.slice(0, 7),
+      }, 6200);
+      x.log('git', `show ${c.hash.slice(0, 7)} — "${c.msg}"`);
+      return;
+    }
+
+    if (sub === 'push') {
+      // git push [remote] [ref]
+      const toks = nonFlags(args.slice(1)).filter(a => a !== '-u' && a !== '--set-upstream');
+      let remoteName = 'origin';
+      let ref: string | undefined;
+      if (toks.length >= 2) {
+        remoteName = toks[0];
+        ref = toks[1];
+      } else if (toks.length === 1) {
+        if (g.branches[toks[0]] === undefined) remoteName = toks[0]; // 'git push origin' → push current branch
+        else ref = toks[0];
+      }
+      const res = gitPush(x.env, ref, remoteName);
+      if (!res.ok) { x.err(res.error!); return; }
+      const info = res.info!;
+      const commit = g.commits[info.to];
+      x.show(`Enumerating objects: ${info.objects}, done.`, 'dim');
+      x.show(`Counting objects: 100% (${info.objects}/${info.objects}), done.`, 'dim');
+      x.show(`Writing objects: 100% (${info.objects}/${info.objects}), ${(0.8 + Math.random() * 2.4).toFixed(2)} KiB | ${(1 + Math.random() * 4).toFixed(1)} MiB/s, done.`, 'dim');
+      x.show(`Total ${info.objects} (delta ${Math.max(0, info.objects - 2)}), reused 0 (delta 0), pack-reused 0`, 'dim');
+      x.outSegs([
+        { t: info.from ? `   ${info.from.slice(0, 7)}..` : '   * [new branch]      ', c: 'dim' },
+        { t: info.to.slice(0, 7), c: 'amber', b: true },
+        { t: `  ${info.branch} -> ${remoteName}/${info.branch}`, c: 'cyan' },
+      ]);
+      x.stage('git', {
+        ...gitPayload(x.env, 'push'),
+        files: commit?.files ?? [],
+        pushInfo: info,
+      }, 5200);
+      x.log('git', `push ${remoteName}/${info.branch} → ${info.to.slice(0, 7)}`, '#53c7f0');
+      return;
+    }
+
+    if (sub === 'rm') {
+      const target = nonFlags(args.slice(1))[0];
+      if (!target) { x.err('usage: git rm <file>'); return; }
+      const preId = nodeIndex(x.env).get(resolvePath(x.env, target)?.path ?? '')?.id;
+      const res = gitRm(x.env, target);
+      if (!res.ok) { x.err(res.error!); return; }
+      x.outSegs([{ t: "rm '", c: 'fg' }, { t: rel(res.path!), c: 'rose' }, { t: "'", c: 'fg' }]);
+      if (preId) {
+        x.packet(TTY, preId, '#f2708a', 'rm', 100);
+        x.flash(preId, '#f2708a', 'git rm', 220);
+      }
+      x.log('git', `rm ${rel(res.path!)}`, '#f2708a');
+      return;
+    }
+
+    x.err(`git: '${sub}' is not a git command — try: init, add, commit, status, log, diff, branch, checkout, show, push, rm`);
   },
 
   /* ---------------- npm ---------------- */
@@ -1081,6 +1471,7 @@ const HANDLERS: Record<string, Handler> = {
     x.stage('network', {
       host, path, method: 'GET', status: 200, statusText: 'OK',
       mime: mimeOf(path), size, timings, ip,
+      bodyPreview: body.split('\n').slice(0, 6),
       ...(outFile ? { outFile } : {}),
     }, 6400);
     x.show(`* Connected to ${host} (${ip}) port 443`, 'dim');
@@ -1771,6 +2162,12 @@ function runProgram(x: Exec, fileArg: string | undefined, runtime: string) {
 function writeRedirect(x: Exec, target: string, append: boolean) {
   const env = x.env;
   const abs = normalize(env.cwd, target);
+  // /dev/null — silently discard
+  if (abs === '/dev/null' || target === '/dev/null') {
+    x.lines = x.lines.filter(l => !(l.segs.length === 1 && x.stdout.split('\n').includes(l.segs[0].t)));
+    x.show(`↳ ${x.stdout.length} byte(s) → /dev/null (discarded)`, 'dim');
+    return;
+  }
   const parent = abs ? parentDir(env, abs) : null;
   if (!abs || !parent) { x.err(`zsh: no such file or directory: ${target}`); return; }
   const existing = resolvePath(env, target);
@@ -1806,14 +2203,34 @@ function simulateUnknown(x: Exec, cmd: string, args: string[]) {
   x.log('proc', `simulated unknown binary '${cmd}'`, '#6ea1ff');
 }
 
+/* merge the full "real terminal" command set */
+Object.assign(HANDLERS, EXTRA_HANDLERS);
+
+/** Copy state mutated by a nested execution back into the current env. */
+function adoptEnv(env: EnvState, other: EnvState): void {
+  env.fs = other.fs;
+  env.cwd = other.cwd;
+  env.git = other.git;
+  env.vars = other.vars;
+  env.aliases = other.aliases;
+  env.packages = other.packages;
+  env.seq = other.seq;
+  env.installedBrew = other.installedBrew;
+  env.clipboard = other.clipboard;
+  env.pushdStack = other.pushdStack;
+  env.lastExit = other.lastExit;
+}
+
 /* ------------------------------------------------------------------ */
 /* Top-level executor                                                  */
 /* ------------------------------------------------------------------ */
 
 const MUTATING_WORDS = [
-  'cd', 'mkdir', 'touch', 'cp', 'mv', 'rm', 'chmod', 'chown', 'ln',
-  'npm', 'curl', 'wget', 'export', 'alias', 'unalias', 'reset', 'clear',
-  'brew', 'omz', 'storage', 'import',
+  'cd', 'mkdir', 'touch', 'cp', 'mv', 'rm', 'chmod', 'chown', 'ln', 'patch', 'rsync',
+  'npm', 'curl', 'wget', 'export', 'alias', 'unalias', 'reset', 'clear', 'unset', 'setenv',
+  'brew', 'omz', 'storage', 'import', 'yarn', 'pnpm', 'pip', 'pip3', 'port',
+  'source', 'pushd', 'popd', 'screencapture', 'scp', 'open', 'pbcopy',
+  'sudo', 'time', 'nohup', 'git',
 ];
 
 function isMutating(cmdLine: string): boolean {
@@ -1847,7 +2264,7 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
     const prePipeCwd = env.cwd;
 
     for (const raw of stagesRaw) {
-      const { tokens, target, append } = extractRedirect(tokenize(raw));
+      const { tokens, target, append } = extractRedirect(tokenize(raw).map(t => expandVars(t, env)));
       if (!tokens.length) continue;
       const stageEnv = isPipe ? { ...env, cwd: prePipeCwd } : env;
       const x = new Exec(stageEnv, stdin);
@@ -1855,13 +2272,52 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       let cmd = tokens[0];
       let rawArgs = tokens.slice(1);
       if (env.aliases[cmd]) {
-        const aliasTokens = tokenize(env.aliases[cmd]);
+        const aliasTokens = tokenize(env.aliases[cmd]).map(t => expandVars(t, env));
         cmd = aliasTokens[0];
         rawArgs = [...aliasTokens.slice(1), ...rawArgs];
       }
+      // prefix utilities: sudo / nohup / nice / env just decorate
+      let prefixGuard = 0;
+      while ((cmd === 'sudo' || cmd === 'nohup' || cmd === 'nice' || cmd === 'env') && rawArgs.length && prefixGuard++ < 4) {
+        if (cmd === 'sudo') x.show('sudo: running with elevated privileges (simulated)', 'dim');
+        if (cmd === 'nohup') x.log('proc', 'nohup: ignoring input and redirecting to nohup.out', '#6ea1ff');
+        if (cmd === 'env' && rawArgs[0].includes('=')) { x.env.vars[rawArgs[0].slice(0, rawArgs[0].indexOf('='))] = rawArgs[0].slice(rawArgs[0].indexOf('=') + 1); }
+        cmd = rawArgs.shift()!;
+      }
       const flags = flagsOf(rawArgs);
 
-      if (cmd === 'clear' || cmd === 'reset') {
+      if (cmd === 'time' && rawArgs.length) {
+        // `time <cmd>` — run the inner command, then print the classic timing block
+        const innerLine = rawArgs.join(' ');
+        const t0 = Date.now();
+        const inner = executeCommand(innerLine, env);
+        adoptEnv(env, inner.env);
+        inner.lines.forEach(l => x.lines.push(l));
+        inner.events.forEach(e => x.events.push(e));
+        const ms = Math.max(1, Date.now() - t0);
+        x.showSegs([
+          { t: 'real\t', c: 'dim' }, { t: `${(ms / 1000 + rand(0, 90) / 1000).toFixed(3)}s`, c: 'fg' },
+          { t: '   user\t', c: 'dim' }, { t: `${(ms * 0.3 / 1000).toFixed(3)}s`, c: 'fg' },
+          { t: '   sys\t', c: 'dim' }, { t: `${(ms * 0.1 / 1000).toFixed(3)}s`, c: 'fg' },
+        ]);
+      } else if (cmd === 'source' || (cmd === '.' && rawArgs.length)) {
+        const targetFile = rawArgs.filter(a => !a.startsWith('-'))[0];
+        const r = targetFile ? resolvePath(x.env, targetFile) : null;
+        if (!r || r.node.type !== 'file') {
+          x.err(`source: ${targetFile}: file not found`);
+        } else {
+          const scriptLines = (r.node.content ?? '').split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+          for (const line of scriptLines) {
+            const inner = executeCommand(line, env);
+            adoptEnv(env, inner.env);
+            inner.lines.forEach(l => x.lines.push(l));
+            inner.events.forEach(e => x.events.push(e));
+          }
+          x.log('sys', `source ${displayPath(targetFile)} — ${scriptLines.length} command(s) executed`, '#a991f7');
+          x.flash(r.node.id, '#a991f7', 'source', 150);
+        }
+      } else if (cmd === 'clear' || cmd === 'reset') {
+
         clear = true;
         if (cmd === 'reset') {
           const fresh = initialEnv();
@@ -1895,7 +2351,7 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
           try {
             const res = formula.execute(rawArgs, flags, stdin, env);
             x.lines.push(...res.lines);
-            x.absorbStdout(res.stdout);
+            x.setStdout(res.stdout);
             x.proc(cmd, 1200);
             x.log('proc', `${cmd} executed`);
           } catch (e) {
@@ -1920,6 +2376,11 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
       last = x;
       lastRedirected = !!target;
       lastTarget = target ?? '';
+      // pipe stages run on a shallow clone — sync top-level field writes back
+      env.vars = x.env.vars;
+      env.aliases = x.env.aliases;
+      env.clipboard = x.env.clipboard;
+      env.pushdStack = x.env.pushdStack;
     }
 
     if (isPipe) {
@@ -1927,6 +2388,8 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
     }
 
     if (!last) continue;
+
+    env.lastExit = last.ok ? 0 : 1;
 
     if (stageInfos.length >= 2) {
       last.stage('pipeline', {
@@ -1944,6 +2407,9 @@ export function executeCommand(line: string, prevEnv: EnvState): ExecResult {
 
     if (!last.ok && sep === '&&') blocked = true;
   }
+
+  // final consistency pass: derived git state always reflects real content
+  if (env.git.init) retrack(env);
 
   return { env, lines: finalLines, events: allEvents, clear };
 }

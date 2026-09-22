@@ -12,6 +12,11 @@ const __dirname = path.dirname(__filename);
 export default defineConfig({
   base: './',
   plugins: [react(), tailwindcss(), viteSingleFile()],
+  server: {
+    host: true,
+    // Allow the Arena live-preview proxy host (sandbox id changes per session).
+    allowedHosts: true,
+  },
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "src"),

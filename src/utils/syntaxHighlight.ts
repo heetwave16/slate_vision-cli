@@ -16,7 +16,7 @@ import type { TermSeg } from '../engine/types';
 
 // Commands that take subcommands
 const SUB_CMD_PARENTS: Record<string, Set<string>> = {
-  git: new Set(['init', 'add', 'commit', 'status', 'log', 'branch', 'diff', 'push', 'pull', 'clone', 'checkout', 'merge', 'rebase', 'stash', 'remote', 'fetch', 'reset', 'tag']),
+  git: new Set(['init', 'add', 'commit', 'status', 'log', 'branch', 'diff', 'push', 'pull', 'clone', 'checkout', 'switch', 'show', 'merge', 'rebase', 'stash', 'remote', 'fetch', 'reset', 'tag', 'rm']),
   npm: new Set(['init', 'install', 'run', 'ls', 'test', 'start', 'publish', 'uninstall', 'update', 'audit', 'ci']),
   docker: new Set(['build', 'run', 'ps', 'images', 'pull', 'push', 'exec', 'stop', 'rm', 'rmi', 'compose']),
   brew: new Set(['install', 'list', 'info', 'uninstall', 'update', 'search', 'cleanup', 'help']),

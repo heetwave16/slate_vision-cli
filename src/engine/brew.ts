@@ -392,7 +392,7 @@ export const FORMULA_REGISTRY: Record<string, BrewFormula> = {
 
 export function handleBrewCommand(
   args: string[],
-  env: EnvState,
+  env: EnvState
 ): { lines: TermLine[]; events: VizEvent[]; ok: boolean } {
   const sub = args[0] ?? 'help';
   const target = args[1]?.toLowerCase();

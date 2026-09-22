@@ -4,9 +4,12 @@ import Terminal from './components/Terminal';
 import FsCanvas from './components/FsCanvas';
 import StageOverlay from './components/StagePanels';
 import { EventLog, ProcessStrip } from './components/SidePanels';
-import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H } from './engine/fs';
+import { computeLayout, countNodes, displayPath, packetRoute, getTtyCenter, HOME, NODE_H, findNodeById } from './engine/fs';
 import { DEMO_SCRIPT, executeCommand, initialEnv } from './engine/interpreter';
+import { retrack } from './engine/git';
 import { AnimationBus, AbortError } from './engine/animationBus';
+import { liveBus } from './live/liveBus';
+import LivePanel from './live/LivePanel';
 import { cn } from './utils/cn';
 import {
   ActivePreview, EnvState, FlashFx, LaidNode, LayoutResult, LogEntry, LogTag, PacketFx,
@@ -64,7 +67,7 @@ const MAX_LINES_PER_BLOCK = 80;
 /* ------------------------------------------------------------------ */
 
 function SettingsDropdown({
-  speed, setSpeed, paused, togglePause, demoRunning, startDemo, env,
+  speed, setSpeed, paused, togglePause, demoRunning, startDemo, onGoLive, env,
 }: {
   speed: number;
   setSpeed: (s: number) => void;
@@ -72,6 +75,7 @@ function SettingsDropdown({
   togglePause: () => void;
   demoRunning: boolean;
   startDemo: () => void;
+  onGoLive: () => void;
   env: EnvState;
 }) {
   const [open, setOpen] = useState(false);
@@ -199,6 +203,14 @@ function SettingsDropdown({
                 <span className="w-4 text-center">🎬</span>
                 {demoRunning ? 'Tour Running…' : 'Start Guided Tour'}
               </button>
+              <button
+                onClick={() => { onGoLive(); setOpen(false); }}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 font-mono text-[11px] text-[var(--text-secondary)] hover:bg-[var(--surface-hover)] hover:text-[var(--text-primary)] text-left"
+                title="Run the REAL shell (zsh) via the local daemon — see docs/REAL_MAC_TERMINAL.md"
+              >
+                <span className="w-4 text-center">⚡</span>
+                Go Live (real shell)
+              </button>
             </div>
 
             {/* Keyboard Shortcuts */}
@@ -241,10 +253,13 @@ export default function App() {
   const [speed, setSpeedState] = useState(1);
   const [paused, setPaused] = useState(false);
   const [demoRunning, setDemoRunning] = useState(false);
+  const [liveOpen, setLiveOpen] = useState(false);
   const [stageLife, setStageLife] = useState(6000);
 
   // File Inspector & Node Highlights
   const [preview, setPreview] = useState<ActivePreview | null>(null);
+  const previewRef = useRef(preview);
+  previewRef.current = preview;
   const [highlightedIds, setHighlightedIds] = useState<Set<string>>(new Set());
 
   // Diagnostics drawer collapsed/expanded state (default collapsed: 28px)
@@ -315,11 +330,7 @@ export default function App() {
       dur: 1.2,
     }]);
     addLog('fs', `saved ${node.node.name} (${content.length} B)`);
-    if (envRef.current.git.init && node.path.startsWith(envRef.current.git.root)) {
-      if (!envRef.current.git.dirty.includes(node.path)) {
-        envRef.current.git.dirty.push(node.path);
-      }
-    }
+    if (envRef.current.git.init) retrack(envRef.current);
   }, [addLog]);
 
   /* ---------------- event scheduler ---------------- */
@@ -395,6 +406,17 @@ export default function App() {
     }
   }, [addLog, animationBus, livePos]);
 
+  /* ---------------- live shell daemon events ---------------- */
+
+  useEffect(() => {
+    const posNow = () => {
+      const m = new Map<string, { x: number; y: number }>();
+      for (const n of layoutRef.current.nodes) m.set(n.id, { x: n.x + 80, y: n.y + NODE_H / 2 });
+      return m;
+    };
+    return liveBus.on(ev => scheduleEvents([ev], posNow()));
+  }, [scheduleEvents]);
+
   /* ---------------- command execution ---------------- */
 
   const runLine = useCallback((line: string) => {
@@ -405,6 +427,20 @@ export default function App() {
     const res = executeCommand(line, before);
     envRef.current = res.env;
     setEnv(res.env);
+
+    // Real-time File Inspector: if a command mutated/deleted the open file,
+    // reflect it immediately (git checkout, rm, echo > file, saves, …)
+    const pv = previewRef.current;
+    if (pv) {
+      const node = findNodeById(res.env.fs, pv.nodeId);
+      if (!node || node.type !== 'file') {
+        setPreview(null);
+        addLog('fs', `inspector closed — ${pv.name} no longer exists`, '#f2708a');
+      } else if ((node.content ?? '') !== pv.content) {
+        setPreview({ ...pv, content: node.content ?? '' });
+        addLog('fs', `${pv.name} changed by command — inspector updated`, '#53c7f0');
+      }
+    }
 
     if (line.trim().startsWith('reset')) {
       abortControllerRef.current.abort();
@@ -612,6 +648,7 @@ export default function App() {
             togglePause={togglePause}
             demoRunning={demoRunning}
             startDemo={() => startDemoRef.current()}
+            onGoLive={() => setLiveOpen(true)}
             env={env}
           />
 
@@ -727,12 +764,17 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          <span className={cn('h-1.5 w-1.5 rounded-full', paused ? 'bg-[var(--semantic-warning)]' : 'bg-[var(--semantic-success)]')} />
-          <span>{paused ? 'paused' : 'ready'}</span>
+          <span className={cn('h-1.5 w-1.5 rounded-full', liveOpen ? 'bg-[var(--semantic-info)]' : paused ? 'bg-[var(--semantic-warning)]' : 'bg-[var(--semantic-success)]')} />
+          <span>{liveOpen ? 'live shell' : paused ? 'paused' : 'ready'}</span>
           <span className="hidden sm:inline text-[var(--border-strong)]">·</span>
-          <span className="hidden sm:inline">in-memory sandbox</span>
+          <span className="hidden sm:inline">{liveOpen ? 'real zsh · observed' : 'in-memory sandbox'}</span>
         </div>
       </footer>
+
+      {/* ================= LIVE MODE (real shell via local daemon) ================= */}
+      <AnimatePresence>
+        {liveOpen && <LivePanel onClose={() => setLiveOpen(false)} />}
+      </AnimatePresence>
     </div>
   );
 }

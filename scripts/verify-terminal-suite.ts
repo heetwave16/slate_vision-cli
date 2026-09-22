@@ -1,6 +1,8 @@
 import { initialEnv, executeCommand, COMMANDS } from '../src/engine/interpreter';
 import type { EnvState } from '../src/engine/types';
-import { resolvePath } from '../src/engine/fs';
+import { resolvePath, findNodeById } from '../src/engine/fs';
+import { sha1Hex } from '../src/engine/hash';
+import { blobHash, treeHash } from '../src/engine/git';
 
 interface TestResult {
   category: string;
@@ -186,20 +188,149 @@ runTest('Text Processing', 'tee command', 'echo "sample" | tee sample.txt', (env
 });
 
 // 4. Git Emulation Workflow
-runTest('Git', 'full git lifecycle', 'git init -> add -> commit -> status -> log -> branch', (env) => {
+runTest('Git', 'full git lifecycle (real engine)', 'init -> add -> commit -> branch -> checkout -> diff -> commit', (env) => {
   const res1 = executeCommand('git init', env);
   assert(res1.env.git.init === true, 'git init should initialize repo');
-  const res2 = executeCommand('touch test_git.txt', res1.env);
+  const res2 = executeCommand('echo "line one" > notes.txt', res1.env);
   const res3 = executeCommand('git status', res2.env);
-  assert(res3.lines.some(l => l.segs.some(s => s.t.includes('Untracked') || s.t.includes('test_git.txt'))), 'git status should show untracked');
+  assert(res3.lines.some(l => l.segs.some(s => s.t.includes('Untracked') || s.t.includes('notes.txt'))), 'git status should list notes.txt as untracked');
   const res4 = executeCommand('git add .', res3.env);
-  assert(res4.env.git.staged.length > 0, 'git add should stage files');
+  assert(res4.env.git.index[resolvePath(res4.env, 'notes.txt').path] !== undefined, 'git add should index the file');
   const res5 = executeCommand('git commit -m "feat: initial test commit"', res4.env);
-  assert(res5.env.git.commits.length === 1, 'git commit should record commit');
+  assert(Object.keys(res5.env.git.commits).length === 1, 'git commit should record a commit');
+  assert(res5.env.git.headHash !== null, 'git commit should move HEAD');
   const res6 = executeCommand('git log', res5.env);
   assert(res6.lines.some(l => l.segs.some(s => s.t.includes('feat: initial test commit'))), 'git log should show commit message');
   const res7 = executeCommand('git branch feature/test', res5.env);
-  assert(res7.lines.length > 0 || res7.env.git.branch === 'feature/test', 'git branch should succeed');
+  assert(res7.lines.length > 0, 'git branch should print confirmation');
+  const res8 = executeCommand('git checkout feature/test', res7.env);
+  assert(res8.env.git.branch === 'feature/test', 'git checkout should switch branch');
+  // real content change on the branch
+  const res9 = executeCommand('echo "line two" >> notes.txt', res8.env);
+  const res10 = executeCommand('git diff', res9.env);
+  assert(res10.lines.some(l => l.segs.some(s => s.t.includes('line two'))), 'git diff should show the new working-tree line');
+  const res11 = executeCommand('git add . && git commit -m "feat: second line"', res10.env);
+  assert(Object.keys(res11.env.git.commits).length === 2, 'second commit should be recorded');
+  const res12 = executeCommand('git checkout main', res11.env);
+  const notes = resolvePath(res12.env, 'notes.txt').node;
+  assert(notes && notes.type === 'file' && 'content' in notes && notes.content === 'line one\n', 'checkout main should physically restore the old file content');
+  const res13 = executeCommand('git log --oneline', res12.env);
+  assert(res13.lines.some(l => l.segs.some(s => s.t.includes('feat: initial test commit'))), 'git log --oneline on main shows first commit only');
+});
+
+runTest('Git', 'commit hashes + show/branch/rm/push', 'sha1 object ids, git show, push, git rm', (env) => {
+  let e = executeCommand('git init', env).env;
+  e = executeCommand('echo "hello" > a.txt', e).env;
+  e = executeCommand('git add .', e).env;
+  const r = executeCommand('git commit -m "x"', e);
+  const hash1 = r.env.git.headHash;
+  const commit = r.env.git.commits[hash1!];
+  assert(hash1 && commit.hash === hash1, 'commit hash should be self-consistent');
+  const p = resolvePath(r.env, 'a.txt').path;
+  assert(commit.tree[p] === 'hello\n', 'tree should snapshot the file content');
+  assert(blobHash('hello\n') === sha1Hex('blob 6\x00hello\n'), 'blob hash follows the real git blob format');
+  const expected = sha1Hex(
+    `tree ${treeHash(commit.tree)}\n` +
+    `author ${commit.author} <${commit.at}> +0000\n` +
+    `committer ${commit.author} <${commit.at}> +0000\n\n` +
+    `${commit.msg}\n`,
+  );
+  assert(commit.hash === expected, 'commit hash is the sha1 of the real commit object payload');
+  const show = executeCommand('git show', r.env);
+  assert(show.lines.some(l => l.segs.some(s => s.t.includes('hello'))), 'git show should render the patch with the file content');
+  const br = executeCommand('git branch b1', r.env);
+  assert(br.env.git.branches['b1'] !== undefined, 'branch b1 should exist');
+  const co = executeCommand('git checkout b1', br.env);
+  assert(co.env.git.branch === 'b1', 'checkout b1 should switch');
+  const rm = executeCommand('git rm a.txt', co.env);
+  assert(resolvePath(rm.env, 'a.txt') === null, 'git rm should delete the file');
+  const push = executeCommand('git push origin b1', rm.env);
+  assert(push.env.git.branches['origin/b1'] !== undefined, 'git push should create origin/b1');
+  const status = executeCommand('git status', push.env);
+  assert(status.lines.some(l => l.segs.some(s => s.t.includes('a.txt'))), 'git status after rm should mention the deletion');
+});
+
+// 4b. Full "real terminal" command set
+runTest('RealTerminal', 'env var + special expansion', 'export, echo $V, $?, $$, ~', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  run('export FOO=bar42');
+  const echo = run('echo $FOO');
+  assert(echo.lines[0]?.segs[0].t === 'bar42', 'echo $FOO should print the exported value');
+  const home = run('echo ~');
+  assert(home.lines[0]?.segs[0].t === '/home/user', 'echo ~ should expand to HOME');
+  const pid = run('echo $$');
+  assert(/^\d+$/.test(pid.lines[0]?.segs[0].t ?? ''), 'echo $$ should print a numeric pid');
+  const fail = run('ls /nope-such-dir');
+  assert(fail.lines.some(l => l.segs.some(s => s.c === 'err')), 'ls missing dir should error');
+  const code = run('echo $?');
+  assert(code.lines[0]?.segs[0].t === '1', '$? should be 1 after a failed command');
+});
+
+runTest('RealTerminal', 'text tools', 'seq/rev/nl/cksum/shasum/basename/realpath', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const seq = run('seq 3');
+  const seqOut = seq.lines.map(l => l.segs.map(s => s.t).join('')).join('\n');
+  assert(seqOut === '1\n2\n3', 'seq 3 should print 1..3 (got: ' + JSON.stringify(seqOut) + ')');
+  const rev = run('echo hello | rev');
+  assert(rev.lines[0]?.segs[0].t === 'olleh', 'rev should reverse the line');
+  const ck = run('echo abc | cksum');
+  assert(/\d+\s+3\s+<stdin>/.test(ck.lines[0]?.segs[0].t ?? ''), 'cksum should print crc len name');
+  const sha = run('echo "abc" | shasum');
+  assert(sha.lines[0]?.segs[0].t.startsWith('a9993e364706816aba3e25717850c26c9cd0d89d'), 'shasum of abc must be the FIPS vector');
+  const base = run('basename /a/b/c.js .js');
+  assert(base.lines[0]?.segs[0].t === 'c', 'basename should strip dir + suffix');
+  const rp = run('touch notes2.txt && realpath notes2.txt');
+  assert(rp.lines.some(l => l.segs.some(s => s.t === '/home/user/notes2.txt')), 'realpath should canonicalize');
+});
+
+runTest('RealTerminal', 'macOS commands', 'sw_vers/cal/open/say/mdfind/screencapture', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const sw = run('sw_vers');
+  assert(sw.lines.some(l => l.segs.some(s => s.t.includes('Mac OS X'))), 'sw_vers should print Mac OS X');
+  const cal = run('cal 9 2026');
+  assert(cal.lines.some(l => l.segs.some(s => s.t.includes('September'))), 'cal should name the month');
+  const open = run('touch mac-test.txt && open mac-test.txt');
+  assert(open.events.some(ev => ev.kind === 'preview'), 'open <file> should open the inspector');
+  const say = run('say "hello there"');
+  assert(say.lines.some(l => l.segs.some(s => s.t.includes('hello there'))), 'say should echo the text');
+  const find = run('mdfind .txt');
+  assert(find.lines.length > 0, 'mdfind should print a result summary');
+  run('screencapture snap.png');
+  assert(!!resolvePath(e, 'snap.png'), 'screencapture should create the png');
+  const clip = run('echo "clip me" | pbcopy && pbpaste');
+  assert(clip.lines.some(l => l.segs.some(s => s.t.includes('clip me'))), 'pbcopy/pbpaste round-trip');
+});
+
+runTest('RealTerminal', 'dir stack + /dev/null + prefixes', 'pushd/popd/dirs, 2>/dev/null, time/sudo', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  run('cd project && pushd ~ && dirs && popd');
+  assert(e.cwd === '/home/user/project', 'popd should return to the pushed dir');
+  const devnull = run('ls /definitely-missing 2>/dev/null');
+  assert(!devnull.lines.some(l => l.segs.some(s => s.t.includes('wrote'))), '/dev/null should discard without writing');
+  const timed = run('time seq 5');
+  assert(timed.lines.some(l => l.segs.some(s => s.t.includes('real'))), 'time should print the timing block');
+  const sudo = run('sudo sw_vers');
+  assert(sudo.lines.some(l => l.segs.some(s => s.t.includes('ProductVersion'))), 'sudo should run the wrapped command');
+});
+
+runTest('RealTerminal', 'source + pipeline shasum + pkg managers', 'source script, pipe, yarn/pnpm/pip', (env) => {
+  let e = env;
+  const run = (l: string) => { const r = executeCommand(l, e); e = r.env; return r; };
+  const sourced = run('echo "export FROM_SCRIPT=yes" > s.sh && source s.sh && echo $FROM_SCRIPT');
+  assert(sourced.lines.some(l => l.segs.some(s => s.t === 'yes')), 'source should run the script in this shell');
+  const piped = run('seq 10 | shasum');
+  const pipedLine = piped.lines[0]?.segs.map(s => s.t).join('') ?? '';
+  assert(/^[0-9a-f]{40}  <stdin>$/.test(pipedLine), 'seq | shasum should hash the piped data (got: ' + JSON.stringify(pipedLine) + ')');
+  run('yarn add left-pad');
+  assert(e.packages.some(p => p.name === 'left-pad'), 'yarn add should register the package');
+  run('pnpm install chalk');
+  assert(e.packages.some(p => p.name === 'chalk'), 'pnpm install should register the package');
+  run('pip install requests');
+  assert(e.packages.some(p => p.name === 'requests'), 'pip install should register the package');
 });
 
 // 5. Package Management

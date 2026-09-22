@@ -17,19 +17,27 @@ export interface FsNode {
 }
 
 export interface GitCommit {
-  hash: string;
+  hash: string;             // real SHA-1
+  parents: string[];
   msg: string;
-  files: string[];
+  author: string;
   at: number;
+  tree: Record<string, string>;  // abs path → content snapshot
+  files: string[];               // repo-relative paths changed
+  stats: { path: string; add: number; del: number; status: 'added' | 'modified' | 'deleted' }[];
 }
 
 export interface GitState {
   init: boolean;
   root: string;      // repo root path
   branch: string;
-  staged: string[];  // absolute paths
-  dirty: string[];   // absolute paths (modified / untracked)
-  commits: GitCommit[];
+  branches: Record<string, string | null>; // branch name → head hash (null = unborn)
+  commits: Record<string, GitCommit>;
+  order: string[];   // commit hashes in creation order
+  index: Record<string, string>;  // abs path → staged content snapshot
+  headHash: string | null;
+  staged: string[];  // derived: abs paths whose staged content differs from HEAD
+  dirty: string[];   // derived: abs paths modified/untracked vs index
 }
 
 export interface Pkg {
@@ -51,6 +59,10 @@ export interface EnvState {
   aliases: Record<string, string>;
   promptTheme?: string;
   installedBrew?: Record<string, { version: string; bin: string; formula: string; desc: string; installedAt: number }>;
+  lastExit?: number;     // $?
+  clipboard?: string;    // pbcopy / pbpaste
+  pid?: number;          // $$ — fake but stable session pid
+  pushdStack?: string[]; // directory stack
 }
 
 /* ------------------------------------------------------------------ */
@@ -91,20 +103,36 @@ export interface NetworkPayload {
   mode?: 'http' | 'ping' | 'ssh' | 'traceroute' | 'dig';
   ip?: string;
   hops?: { hop: number; host: string; ip: string; time: string }[];
+  /** first lines of the (simulated) response body — shown in the stage overlay */
+  bodyPreview?: string[];
 }
 
 export interface PipelineStageInfo { name: string; arg: string }
 export interface PipelinePayload { stages: PipelineStageInfo[]; output: string[] }
 
+export interface DiffHunkView { header: string; lines: { t: string; c: 'add' | 'del' | 'ctx' }[] }
+export interface DiffFileView {
+  path: string;
+  status: 'added' | 'deleted' | 'modified';
+  add: number;
+  del: number;
+  hunks: DiffHunkView[];
+}
+export interface GitBranchView { name: string; hash: string | null; current: boolean }
+export interface GitCommitView { hash: string; msg: string; files: string[]; stats: GitCommit['stats'] }
+
 export interface GitPayload {
-  mode: 'init' | 'add' | 'commit' | 'branch' | 'diff';
+  mode: 'init' | 'add' | 'commit' | 'branch' | 'diff' | 'checkout' | 'push';
   root?: string;
   branch: string;
   files: string[];
-  commit?: GitCommit;
-  commits: GitCommit[];
-  diffLines?: string[];
-  branches?: string[];
+  commit?: GitCommitView;
+  commits: GitCommitView[];         // history of current branch, newest first
+  branches: GitBranchView[];
+  diffFiles?: DiffFileView[];       // real content diff hunks
+  diffLabel?: string;
+  changedFiles?: { path: string; action: 'added' | 'modified' | 'deleted' }[];
+  pushInfo?: { remote: string; branch: string; from: string | null; to: string; objects: number };
 }
 
 export interface NpmPayload {
